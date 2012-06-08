@@ -182,6 +182,15 @@ const ModalDialog = new Lang.Class({
     _fadeOpen: function() {
         let monitor = Main.layoutManager.focusMonitor;
 
+        let monitors = Main.layoutManager.monitors;
+        let [x, y, mod] = global.get_pointer();
+        for (let j =0; j < monitors.length; j++){
+            if ( x > monitors[j].x && x < (monitors[j].x + monitors[j].width) && 
+                 y > monitors[j].y && (monitors[j].y + monitors[j].height)){
+                    monitor = monitors[j];
+            }
+        }
+        
         this._backgroundBin.set_position(monitor.x, monitor.y);
         this._backgroundBin.set_size(monitor.width, monitor.height);
 
