@@ -180,7 +180,11 @@ const ModalDialog = new Lang.Class({
     },
 
     _fadeOpen: function() {
+<<<<<<< HEAD
         let monitor = Main.layoutManager.currentMonitor;
+=======
+        let monitor = Main.layoutManager.focusMonitor;
+>>>>>>> parent of 67ed7f2... show modal Dialogs on monitor with the mouse pointer
 
         this._backgroundBin.set_position(monitor.x, monitor.y);
         this._backgroundBin.set_size(monitor.width, monitor.height);
