@@ -133,7 +133,7 @@ const IMStatusChooserItem = new Lang.Class({
         item = new IMStatusItem(_("Busy"), 'user-busy');
         this._combo.addMenuItem(item, IMStatus.BUSY);
 
-        item = new IMStatusItem(_("Hidden"), 'user-invisible');
+        item = new IMStatusItem(_("Invisible"), 'user-invisible');
         this._combo.addMenuItem(item, IMStatus.HIDDEN);
 
         item = new IMStatusItem(_("Away"), 'user-away');
@@ -584,7 +584,7 @@ const UserMenuButton = new Lang.Class({
         this._session.CanShutdownRemote(Lang.bind(this,
             function(result, error) {
                 if (!error) {
-                    this._haveShutdown = result;
+                    this._haveShutdown = result[0];
                     this._updateSuspendOrPowerOff();
                 }
             }));

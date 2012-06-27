@@ -436,6 +436,10 @@ StScrollBar StButton#vhandle:hover
     -boxpointer-gap: 4px
 }
 
+#networkMenu {
+    spacing: 4px;
+}
+
 /* User Menu */
 
 #panelUserMenu {
@@ -1062,6 +1066,7 @@ StScrollBar StButton#vhandle:hover
     padding: .4em 1.75em;
     color: #cccccc;
     font-weight: bold;
+    text-align: center;
 }
 
 .calendar-day-base {

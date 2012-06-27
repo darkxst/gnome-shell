@@ -297,7 +297,7 @@ sort_and_prepare_results (GSList *results)
       sorted_results = g_slist_prepend (sorted_results, id);
     }
 
-  g_slist_foreach (results, (GFunc) free_result, NULL);
+  g_slist_free_full (results, (GDestroyNotify) free_result);
 
   return sorted_results;
 }
@@ -462,6 +462,9 @@ shell_contact_system_initial_search (ShellContactSystem *self,
 
       g_object_unref (individual);
     }
+
+  g_object_unref (iter);
+  g_slist_free_full (normalized_terms, (GDestroyNotify) g_free);
 
   return sort_and_prepare_results (results);
 }

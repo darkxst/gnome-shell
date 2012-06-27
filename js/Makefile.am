@@ -6,9 +6,8 @@ misc/config.js: misc/config.js.in Makefile
 	[ -d $(@D) ] || $(mkdir_p) $(@D) ; \
 	sed -e "s|[@]PACKAGE_NAME@|$(PACKAGE_NAME)|g" \
 	    -e "s|[@]PACKAGE_VERSION@|$(PACKAGE_VERSION)|g" \
-	    -e "s|[@]GJS_VERSION@|$(GJS_VERSION)|g" \
+	    -e "s|[@]HAVE_FOLKS@|$(HAVE_FOLKS)|g" \
 	    -e "s|[@]HAVE_BLUETOOTH@|$(HAVE_BLUETOOTH)|g" \
-	    -e "s|[@]SHELL_SYSTEM_CA_FILE@|$(SHELL_SYSTEM_CA_FILE)|g" \
 	    -e "s|[@]GETTEXT_PACKAGE@|$(GETTEXT_PACKAGE)|g" \
 	    -e "s|[@]datadir@|$(datadir)|g" \
 	    -e "s|[@]libexecdir@|$(libexecdir)|g" \
@@ -52,6 +51,7 @@ nobase_dist_js_DATA = 	\
 	ui/endSessionDialog.js	\
 	ui/environment.js	\
 	ui/extensionSystem.js	\
+	ui/extensionDownloader.js \
 	ui/flashspot.js		\
 	ui/iconGrid.js		\
 	ui/keyboard.js		\

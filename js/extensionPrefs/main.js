@@ -202,23 +202,17 @@ const Application = new Lang.Class({
     },
 
     _scanExtensions: function() {
-        ExtensionUtils.scanExtensions(Lang.bind(this, function(uuid, dir, type) {
-            if (ExtensionUtils.extensions[uuid] !== undefined)
-                return;
-
-            let extension;
-            try {
-                extension = ExtensionUtils.createExtensionObject(uuid, dir, type);
-            } catch(e) {
-                logError(e, 'Could not create extensions object');
-                return;
-            }
-
-            let iter = this._model.append();
-            this._model.set(iter, [0, 1], [uuid, extension.metadata.name]);
-            this._extensionIters[uuid] = iter;
-        }));
+        let finder = new ExtensionUtils.ExtensionFinder();
+        finder.connect('extension-found', Lang.bind(this, this._extensionFound));
+        finder.scanExtensions();
     },
+
+    _extensionFound: function(signals, extension) {
+        let iter = this._model.append();
+        this._model.set(iter, [0, 1], [extension.uuid, extension.metadata.name]);
+        this._extensionIters[uuid] = iter;
+    },
+
 
     _onActivate: function() {
         this._window.present();
@@ -268,7 +262,6 @@ function initEnvironment() {
 
 function main(argv) {
     initEnvironment();
-    ExtensionUtils.init();
 
     Gettext.bindtextdomain(Config.GETTEXT_PACKAGE, Config.LOCALEDIR);
     Gettext.textdomain(Config.GETTEXT_PACKAGE);

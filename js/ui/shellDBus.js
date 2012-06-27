@@ -7,6 +7,7 @@ const Shell = imports.gi.Shell;
 
 const Config = imports.misc.config;
 const ExtensionSystem = imports.ui.extensionSystem;
+const ExtensionDownloader = imports.ui.extensionDownloader;
 const ExtensionUtils = imports.misc.extensionUtils;
 const Flashspot = imports.ui.flashspot;
 const Main = imports.ui.main;
@@ -64,6 +65,9 @@ const GnomeShellIface = <interface name="org.gnome.Shell">
     <arg type="b" direction="out" name="success"/>
 </method>
 <method name="LaunchExtensionPrefs">
+    <arg type="s" direction="in" name="uuid"/>
+</method>
+<method name="ReloadExtension">
     <arg type="s" direction="in" name="uuid"/>
 </method>
 <property name="OverviewActive" type="b" access="readwrite" />
@@ -254,11 +258,11 @@ const GnomeShell = new Lang.Class({
     },
 
     InstallRemoteExtension: function(uuid) {
-        ExtensionSystem.installExtensionFromUUID(uuid);
+        ExtensionDownloader.installExtensionFromUUID(uuid);
     },
 
     UninstallExtension: function(uuid) {
-        return ExtensionSystem.uninstallExtensionFromUUID(uuid);
+        return ExtensionDownloader.uninstallExtensionFromUUID(uuid);
     },
 
     LaunchExtensionPrefs: function(uuid) {
@@ -266,6 +270,11 @@ const GnomeShell = new Lang.Class({
         let app = appSys.lookup_app('gnome-shell-extension-prefs.desktop');
         app.launch(global.display.get_current_time_roundtrip(),
                    ['extension:///' + uuid], -1, null);
+    },
+
+    ReloadExtension: function(uuid) {
+        ExtensionSystem.unloadExtension(uuid);
+        ExtensionSystem.loadExtension(uuid);
     },
 
     get OverviewActive() {
@@ -278,8 +287,6 @@ const GnomeShell = new Lang.Class({
         else
             Main.overview.hide();
     },
-
-    ApiVersion: ExtensionSystem.API_VERSION,
 
     ShellVersion: Config.PACKAGE_VERSION,
 

@@ -181,8 +181,9 @@ const ModalDialog = new Lang.Class({
 
     _fadeOpen: function() {
         let monitor = Main.layoutManager.currentMonitor;
-        
-	this._backgroundBin.set_position(monitor.x, monitor.y);
+
+        this._backgroundBin.set_position(monitor.x, monitor.y);
+
         this._backgroundBin.set_size(monitor.width, monitor.height);
 
         this.state = State.OPENING;

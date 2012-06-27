@@ -18,10 +18,10 @@
 #include <meta/main.h>
 #include <meta/meta-plugin.h>
 #include <meta/prefs.h>
+#include <atk-bridge.h>
 #include <telepathy-glib/debug.h>
 #include <telepathy-glib/debug-sender.h>
 
-#include "shell-a11y.h"
 #include "shell-global.h"
 #include "shell-global-private.h"
 #include "shell-js.h"
@@ -236,6 +236,20 @@ shell_perf_log_init (void)
 }
 
 static void
+shell_a11y_init (void)
+{
+  if (clutter_get_accessibility_enabled () == FALSE)
+    {
+      g_warning ("Accessibility: clutter has no accessibility enabled"
+                 " skipping the atk-bridge load");
+    }
+  else
+    {
+      atk_bridge_adaptor_init (NULL, NULL);
+    }
+}
+
+static void
 default_log_handler (const char     *log_domain,
                      GLogLevelFlags  log_level,
                      const char     *message,
@@ -361,10 +375,8 @@ main (int argc, char **argv)
   meta_plugin_manager_set_plugin_type (gnome_shell_plugin_get_type ());
 
   /* Prevent meta_init() from causing gtk to load gail and at-bridge */
-  g_setenv ("NO_GAIL", "1", TRUE);
   g_setenv ("NO_AT_BRIDGE", "1", TRUE);
   meta_init ();
-  g_unsetenv ("NO_GAIL");
   g_unsetenv ("NO_AT_BRIDGE");
 
   /* FIXME: Add gjs API to set this stuff and don't depend on the

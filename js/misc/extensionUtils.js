@@ -3,6 +3,9 @@
 // Common utils for the extension system and the extension
 // preferences tool
 
+const Lang = imports.lang;
+const Signals = imports.signals;
+
 const GLib = imports.gi.GLib;
 const Gio = imports.gi.Gio;
 const ShellJS = imports.gi.ShellJS;
@@ -13,9 +16,6 @@ const ExtensionType = {
     SYSTEM: 1,
     PER_USER: 2
 };
-
-// GFile for user extensions
-var userExtensionsDir = null;
 
 // Maps uuid -> metadata object
 const extensions = {};
@@ -88,9 +88,6 @@ function isOutOfDate(extension) {
     if (!versionCheck(extension.metadata['shell-version'], Config.PACKAGE_VERSION))
         return true;
 
-    if (extension.metadata['js-version'] && !versionCheck(extension.metadata['js-version'], Config.GJS_VERSION))
-        return true;
-
     return false;
 }
 
@@ -155,45 +152,48 @@ function installImporter(extension) {
     _extension = null;
 }
 
-function init() {
-    let userExtensionsPath = GLib.build_filenamev([global.userdatadir, 'extensions']);
-    userExtensionsDir = Gio.file_new_for_path(userExtensionsPath);
-    try {
-        if (!userExtensionsDir.query_exists(null))
-            userExtensionsDir.make_directory_with_parents(null);
-    } catch (e) {
-        logError(e, 'Could not create extensions directory');
-    }
-}
+const ExtensionFinder = new Lang.Class({
+    Name: 'ExtensionFinder',
 
-function scanExtensionsInDirectory(callback, dir, type) {
-    let fileEnum;
-    let file, info;
-    try {
-        fileEnum = dir.enumerate_children('standard::*', Gio.FileQueryInfoFlags.NONE, null);
-    } catch(e) {
-        logError(e, 'Could not enumerate extensions directory');
-        return;
-    }
+    _scanExtensionsInDirectory: function(dir, type) {
+        let fileEnum;
+        let file, info;
+        try {
+            fileEnum = dir.enumerate_children('standard::*', Gio.FileQueryInfoFlags.NONE, null);
+        } catch(e) {
+            logError(e, 'Could not enumerate extensions directory');
+            return;
+        }
 
-    while ((info = fileEnum.next_file(null)) != null) {
-        let fileType = info.get_file_type();
-        if (fileType != Gio.FileType.DIRECTORY)
-            continue;
-        let uuid = info.get_name();
-        let extensionDir = dir.get_child(uuid);
-        callback(uuid, extensionDir, type);
-    }
-    fileEnum.close(null);
-}
+        while ((info = fileEnum.next_file(null)) != null) {
+            let fileType = info.get_file_type();
+            if (fileType != Gio.FileType.DIRECTORY)
+                continue;
+            let uuid = info.get_name();
+            let extensionDir = dir.get_child(uuid);
 
-function scanExtensions(callback) {
-    let systemDataDirs = GLib.get_system_data_dirs();
-    scanExtensionsInDirectory(callback, userExtensionsDir, ExtensionType.PER_USER);
-    for (let i = 0; i < systemDataDirs.length; i++) {
-        let dirPath = GLib.build_filenamev([systemDataDirs[i], 'gnome-shell', 'extensions']);
-        let dir = Gio.file_new_for_path(dirPath);
-        if (dir.query_exists(null))
-            scanExtensionsInDirectory(callback, dir, ExtensionType.SYSTEM);
+            let existing = extensions[uuid];
+            if (existing) {
+                log('Extension %s already installed in %s. %s will not be loaded'.format(uuid, existing.path, extensionDir.get_path()));
+                continue;
+            }
+            let extension = createExtensionObject(uuid, extensionDir, type);
+            this.emit('extension-found', extension);
+        }
+        fileEnum.close(null);
+    },
+
+    scanExtensions: function() {
+        let userExtensionsDir = Gio.File.new_for_path(GLib.build_filenamev([global.userdatadir, 'extensions']));
+        this._scanExtensionsInDirectory(userExtensionsDir, ExtensionType.PER_USER);
+
+        let systemDataDirs = GLib.get_system_data_dirs();
+        for (let i = 0; i < systemDataDirs.length; i++) {
+            let dirPath = GLib.build_filenamev([systemDataDirs[i], 'gnome-shell', 'extensions']);
+            let dir = Gio.file_new_for_path(dirPath);
+            if (dir.query_exists(null))
+                this._scanExtensionsInDirectory(dir, ExtensionType.SYSTEM);
+        }
     }
-}
+});
+Signals.addSignalMethods(ExtensionFinder.prototype);

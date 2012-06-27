@@ -1,6 +1,7 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
 
 const Clutter = imports.gi.Clutter;
+const Config = imports.misc.config;
 const Gtk = imports.gi.Gtk;
 const Meta = imports.gi.Meta;
 const Mainloop = imports.mainloop;
@@ -11,10 +12,9 @@ const Shell = imports.gi.Shell;
 const Gdk = imports.gi.Gdk;
 
 const AppDisplay = imports.ui.appDisplay;
-const ContactDisplay = imports.ui.contactDisplay;
+const ContactDisplay = Config.HAVE_FOLKS ? imports.ui.contactDisplay : null;
 const Dash = imports.ui.dash;
 const DND = imports.ui.dnd;
-const Lightbox = imports.ui.lightbox;
 const Main = imports.ui.main;
 const MessageTray = imports.ui.messageTray;
 const Panel = imports.ui.panel;
@@ -208,7 +208,8 @@ const Overview = new Lang.Class({
         this.addSearchProvider(new AppDisplay.AppSearchProvider());
         this.addSearchProvider(new AppDisplay.SettingsSearchProvider());
         this.addSearchProvider(new PlaceDisplay.PlaceSearchProvider());
-        this.addSearchProvider(new ContactDisplay.ContactSearchProvider());
+        if (ContactDisplay != null)
+            this.addSearchProvider(new ContactDisplay.ContactSearchProvider());
 
         // Load remote search providers provided by applications
         RemoteSearch.loadRemoteSearchProviders(Lang.bind(this, this.addSearchProvider));

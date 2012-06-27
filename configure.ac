@@ -1,5 +1,5 @@
 AC_PREREQ(2.63)
-AC_INIT([gnome-shell],[3.5.2],[https://bugzilla.gnome.org/enter_bug.cgi?product=gnome-shell],[gnome-shell])
+AC_INIT([gnome-shell],[3.5.3],[https://bugzilla.gnome.org/enter_bug.cgi?product=gnome-shell],[gnome-shell])
 
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_SRCDIR([src/shell-global.c])
@@ -62,8 +62,8 @@ AM_CONDITIONAL(BUILD_RECORDER, $build_recorder)
 
 CLUTTER_MIN_VERSION=1.9.16
 GOBJECT_INTROSPECTION_MIN_VERSION=0.10.1
-GJS_MIN_VERSION=1.29.18
-MUTTER_MIN_VERSION=3.5.2
+GJS_MIN_VERSION=1.33.2
+MUTTER_MIN_VERSION=3.5.3
 FOLKS_MIN_VERSION=0.5.2
 GTK_MIN_VERSION=3.3.9
 GIO_MIN_VERSION=2.31.6
@@ -76,15 +76,33 @@ POLKIT_MIN_VERSION=0.100
 STARTUP_NOTIFICATION_MIN_VERSION=0.11
 GCR_MIN_VERSION=3.3.90
 GNOME_DESKTOP_REQUIRED_VERSION=3.5.1
+GNOME_MENUS_REQUIRED_VERSION=3.5.3
+
+AC_ARG_WITH(folks,
+            AS_HELP_STRING([--with-folks],
+                           [Enable folks support]),
+            [with_folks=$withval], [with_folks=yes])
+
+if test x${with_folks} = xyes; then
+  FOLKS_REQUIREMENT="folks >= $FOLKS_MIN_VERSION"
+  AC_DEFINE([HAVE_FOLKS], [1], [folks support])
+  AC_SUBST([HAVE_FOLKS],[1])
+else
+  FOLKS_REQUIREMENT=
+  AC_SUBST([HAVE_FOLKS],[0])
+fi
+AM_CONDITIONAL(BUILD_WITH_FOLKS, test x${with_folks} = xyes)
 
 # Collect more than 20 libraries for a prize!
 PKG_CHECK_MODULES(GNOME_SHELL, gio-unix-2.0 >= $GIO_MIN_VERSION
 			       libxml-2.0
                                gtk+-3.0 >= $GTK_MIN_VERSION
-                               folks >= $FOLKS_MIN_VERSION
+                               atk-bridge-2.0
+			       $FOLKS_REQUIREMENT
                                libmutter >= $MUTTER_MIN_VERSION
                                gjs-internals-1.0 >= $GJS_MIN_VERSION
-			       libgnome-menu-3.0 $recorder_modules
+			       libgnome-menu-3.0 >= $GNOME_MENUS_REQUIRED_VERSION
+                               $recorder_modules
                                gdk-x11-3.0 libsoup-2.4
                                gl
 			       clutter-x11-1.0 >= $CLUTTER_MIN_VERSION
@@ -104,10 +122,6 @@ PKG_CHECK_MODULES(SHELL_PERF_HELPER, gtk+-3.0 gio-2.0)
 PKG_CHECK_MODULES(SHELL_HOTPLUG_SNIFFER, gio-2.0 gdk-pixbuf-2.0)
 
 PKG_CHECK_MODULES(BROWSER_PLUGIN, gio-2.0 >= $GIO_MIN_VERSION json-glib-1.0 >= 0.13.2)
-
-GJS_VERSION=`$PKG_CONFIG --modversion gjs-internals-1.0`
-AC_DEFINE_UNQUOTED([GJS_VERSION], ["$GJS_VERSION"], [The version of GJS we're linking to])
-AC_SUBST([GJS_VERSION], ["$GJS_VERSION"])
 
 GOBJECT_INTROSPECTION_CHECK([$GOBJECT_INTROSPECTION_MIN_VERSION])
 

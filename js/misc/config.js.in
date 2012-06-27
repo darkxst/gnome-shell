@@ -4,10 +4,10 @@
 const PACKAGE_NAME = '@PACKAGE_NAME@';
 /* The version of this package */
 const PACKAGE_VERSION = '@PACKAGE_VERSION@';
-/* The version of GJS we're linking to */
-const GJS_VERSION = '@GJS_VERSION@';
 /* 1 if gnome-bluetooth is available, 0 otherwise */
 const HAVE_BLUETOOTH = @HAVE_BLUETOOTH@;
+/* 1 if folks is available, 0 otherwise */
+const HAVE_FOLKS = @HAVE_FOLKS@;
 /* gettext package */
 const GETTEXT_PACKAGE = '@GETTEXT_PACKAGE@';
 /* locale dir */
