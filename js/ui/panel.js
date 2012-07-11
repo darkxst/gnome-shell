@@ -346,6 +346,7 @@ const AppMenuButton = new Lang.Class({
             return;
 
         this._stop = true;
+        this.actor.reactive = true;
         Tweener.addTween(this._spinner.actor,
                          { opacity: 0,
                            time: SPINNER_ANIMATION_TIME,
@@ -360,6 +361,7 @@ const AppMenuButton = new Lang.Class({
 
     startAnimation: function() {
         this._stop = false;
+        this.actor.reactive = false;
         this._spinner.actor.show();
     },
 
@@ -1126,7 +1128,8 @@ const Panel = new Lang.Class({
         if (!position)
             position = 0;
         this._insertStatusItem(indicator.actor, position);
-        this._menus.addMenu(indicator.menu);
+        if (indicator.menu)
+            this._menus.addMenu(indicator.menu);
 
         this._statusArea[role] = indicator;
         let destroyId = indicator.connect('destroy', Lang.bind(this, function(emitter) {
