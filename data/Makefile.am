@@ -8,14 +8,7 @@ desktop_DATA = gnome-shell.desktop gnome-shell-extension-prefs.desktop
 	    -e "s|@VERSION[@]|$(VERSION)|" \
 	    $< > $@ || rm $@
 
-# Placeholder until we add intltool
-%.desktop:%.desktop.in
-	$(AM_V_GEN) sed s/^_// < $< > $@ || rm $@
-
-searchprovidersdir = $(pkgdatadir)/open-search-providers
-dist_searchproviders_DATA =				\
-	open-search-providers/google.xml		\
-	open-search-providers/wikipedia.xml
+@INTLTOOL_DESKTOP_RULE@
 
 introspectiondir = $(datadir)/dbus-1/interfaces
 introspection_DATA = org.gnome.ShellSearchProvider.xml
@@ -36,22 +29,22 @@ dist_theme_DATA =				\
 	theme/dash-placeholder.svg		\
 	theme/filter-selected-ltr.svg		\
 	theme/filter-selected-rtl.svg		\
-	theme/gdm.css				\
 	theme/gnome-shell.css			\
+	theme/logged-in-indicator.svg		\
+	theme/message-tray-background.png	\
+	theme/noise-texture.png			\
 	theme/panel-button-border.svg		\
 	theme/panel-button-highlight-narrow.svg	\
 	theme/panel-button-highlight-wide.svg	\
 	theme/process-working.svg		\
 	theme/running-indicator.svg		\
-	theme/scroll-hhandle.svg		\
-	theme/scroll-vhandle.svg		\
 	theme/source-button-border.svg		\
 	theme/toggle-off-us.svg			\
 	theme/toggle-off-intl.svg		\
 	theme/toggle-on-us.svg			\
 	theme/toggle-on-intl.svg		\
-	theme/ws-switch-arrow-up.svg		\
-	theme/ws-switch-arrow-down.svg
+	theme/ws-switch-arrow-up.png		\
+	theme/ws-switch-arrow-down.png
 
 gsettings_SCHEMAS = org.gnome.shell.gschema.xml
 
@@ -73,17 +66,11 @@ all-local: gschemas.compiled
 convertdir = $(datadir)/GConf/gsettings
 convert_DATA = gnome-shell-overrides.convert
 
-shadersdir = $(pkgdatadir)/shaders
-shaders_DATA = \
-	shaders/dim-window.glsl
-
-
 EXTRA_DIST =						\
 	gnome-shell.desktop.in.in			\
 	gnome-shell-extension-prefs.desktop.in.in	\
 	$(introspection_DATA)				\
 	$(menu_DATA)					\
-	$(shaders_DATA)					\
 	$(convert_DATA)					\
 	org.gnome.shell.gschema.xml.in.in
 

@@ -1,5 +1,7 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
 
+const System = imports.system;
+
 const Main = imports.ui.main;
 const Scripting = imports.ui.scripting;
 
@@ -99,7 +101,7 @@ function run() {
         Main.overview.hide();
         yield Scripting.waitLeisure();
 
-        global.gc();
+        System.gc();
         yield Scripting.sleep(1000);
         Scripting.collectStatistics();
         Scripting.scriptEvent('afterShowHide');
@@ -113,10 +115,10 @@ function run() {
 
     for (let i = 0; i < 2; i++) {
         Scripting.scriptEvent('applicationsShowStart');
-        Main.overview._viewSelector.switchTab('applications');
+        Main.overview._dash.showAppsButton.checked = true;
         yield Scripting.waitLeisure();
         Scripting.scriptEvent('applicationsShowDone');
-        Main.overview._viewSelector.switchTab('windows');
+        Main.overview._dash.showAppsButton.checked = false;
         yield Scripting.waitLeisure();
     }
 }

@@ -117,6 +117,8 @@ const ShellMountOperation = new Lang.Class({
                              Lang.bind(this, this._onShowProcesses2));
         this.mountOp.connect('aborted',
                              Lang.bind(this, this.close));
+        this.mountOp.connect('show-unmount-progress',
+                             Lang.bind(this, this._onShowUnmountProgress));
 
         this._gicon = source.get_icon();
     },
@@ -178,6 +180,11 @@ const ShellMountOperation = new Lang.Class({
             this._dialog.close();
             this._dialog = null;
         }
+
+        if (this._notifier) {
+            this._notifier.done();
+            this._notifier = null;
+        }
     },
 
     _onShowProcesses2: function(op) {
@@ -208,6 +215,16 @@ const ShellMountOperation = new Lang.Class({
         this._processesDialog.update(message, processes, choices);
     },
 
+    _onShowUnmountProgress: function(op, message, timeLeft, bytesLeft) {
+        if (!this._notifier)
+            this._notifier = new ShellUnmountNotifier();
+            
+        if (bytesLeft == 0)
+            this._notifier.done(message);
+        else
+            this._notifier.show(message);
+    },
+
     borrowDialog: function() {
         if (this._dialogId != 0) {
             this._dialog.disconnect(this._dialogId);
@@ -215,6 +232,46 @@ const ShellMountOperation = new Lang.Class({
         }
 
         return this._dialog;
+    }
+});
+
+const ShellUnmountNotifier = new Lang.Class({
+    Name: 'ShellUnmountNotifier',
+    Extends: MessageTray.Source,
+
+    _init: function() {
+        this.parent('', 'media-removable', St.IconType.FULLCOLOR);
+
+        this._notification = null;
+        Main.messageTray.add(this);
+    },
+
+    show: function(message) {
+        let [header, text] = message.split('\n', 2);
+
+        if (!this._notification) {
+            this._notification = new MessageTray.Notification(this, header, text);
+            this._notification.setTransient(true);
+            this._notification.setUrgency(MessageTray.Urgency.CRITICAL);
+        } else {
+            this._notification.update(header, text);
+        }
+
+        this.notify(this._notification);
+    },
+
+    done: function(message) {
+        if (this._notification) {
+            this._notification.destroy();
+            this._notification = null;
+        }
+
+        if (message) {
+            let notification = new MessageTray.Notification(this, message, null);
+            notification.setTransient(true);
+
+            this.notify(notification);
+        }
     }
 });
 
@@ -341,7 +398,8 @@ const ShellMountPasswordDialog = new Lang.Class({
                          key:    Clutter.Escape
                        },
                        { label: _("Unlock"),
-                         action: Lang.bind(this, this._onUnlockButton)
+                         action: Lang.bind(this, this._onUnlockButton),
+                         default: true
                        }];
 
         this.setButtons(buttons);
@@ -413,11 +471,7 @@ const ShellProcessesDialog = new Lang.Class({
         scrollView.hide();
 
         this._applicationList = new St.BoxLayout({ vertical: true });
-        scrollView.add_actor(this._applicationList,
-                             { x_fill:  true,
-                               y_fill:  true,
-                               x_align: St.Align.START,
-                               y_align: St.Align.MIDDLE });
+        scrollView.add_actor(this._applicationList);
 
         this._applicationList.connect('actor-added',
                                       Lang.bind(this, function() {

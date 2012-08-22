@@ -2,16 +2,11 @@
 
 const Clutter = imports.gi.Clutter;
 const Lang = imports.lang;
-const Mainloop = imports.mainloop;
-const Shell = imports.gi.Shell;
 const Gvc = imports.gi.Gvc;
-const Signals = imports.signals;
 const St = imports.gi.St;
 
-const Main = imports.ui.main;
 const PanelMenu = imports.ui.panelMenu;
 const PopupMenu = imports.ui.popupMenu;
-const Util = imports.misc.util;
 
 const VOLUME_ADJUSTMENT_STEP = 0.05; /* Volume adjustment step in % */
 
@@ -60,6 +55,10 @@ const Indicator = new Lang.Class({
 
         this.actor.connect('scroll-event', Lang.bind(this, this._onScrollEvent));
         this._control.open();
+    },
+
+    setLockedState: function(locked) {
+        this.menu.setSettingsVisibility(!locked);
     },
 
     _onScrollEvent: function(actor, event) {

@@ -84,11 +84,6 @@ void    shell_global_get_pointer             (ShellGlobal         *global,
                                               int                 *y,
                                               ClutterModifierType *mods);
 
-
-/* JavaScript utilities */
-void     shell_global_gc                   (ShellGlobal *global);
-void     shell_global_maybe_gc             (ShellGlobal *global);
-
 typedef struct {
   guint glibc_uordblks;
 

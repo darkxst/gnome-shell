@@ -285,7 +285,7 @@ const AppMenuButton = new Lang.Class({
     },
 
     show: function() {
-        if (this._visible)
+        if (this._visible || Main.screenShield.locked)
             return;
 
         this._visible = true;
@@ -465,6 +465,13 @@ const AppMenuButton = new Lang.Class({
                 return;
         }
         this._sync();
+    },
+
+    setLockedState: function(locked) {
+        if (locked)
+            this.hide();
+        else
+            this._sync();
     },
 
     _sync: function() {
@@ -753,10 +760,11 @@ const PanelCorner = new Lang.Class({
             return null;
 
         // Start at the back and work backward
-        let index = children.length - 1;
-        while (!children[index].visible && index >= 0)
-            index--;
-
+        let index;
+        for (index = children.length - 1; index >= 0; index--) {
+            if (children[index].visible)
+                break;
+        }
         if (index < 0)
             return null;
 
@@ -777,10 +785,11 @@ const PanelCorner = new Lang.Class({
             return null;
 
         // Start at the front and work forward
-        let index = 0;
-        while (!children[index].visible && index < children.length)
-            index++;
-
+        let index;
+        for (index = 0; index < children.length; index++) {
+            if (children[index].visible)
+                break;
+        }
         if (index == children.length)
             return null;
 
@@ -908,6 +917,8 @@ const Panel = new Lang.Class({
             this.actor.remove_style_class_name('in-overview');
         }));
 
+        Main.screenShield.connect('lock-status-changed', Lang.bind(this, this._onLockStateChanged));
+
         this._menus = new PopupMenu.PopupMenuManager(this);
 
         this._leftBox = new St.BoxLayout({ name: 'panelLeft' });
@@ -955,10 +966,6 @@ const Panel = new Lang.Class({
         this._dateMenu = new DateMenu.DateMenuButton();
         this._centerBox.add(this._dateMenu.actor, { y_fill: true });
         this._menus.addMenu(this._dateMenu.menu);
-
-        /* right */
-        Main.statusIconDispatcher.connect('status-icon-added', Lang.bind(this, this._onTrayIconAdded));
-        Main.statusIconDispatcher.connect('status-icon-removed', Lang.bind(this, this._onTrayIconRemoved));
 
         Main.layoutManager.panelBox.add(this.actor);
         Main.ctrlAltTabManager.addGroup(this.actor, _("Top Bar"), 'start-here',
@@ -1133,34 +1140,22 @@ const Panel = new Lang.Class({
 
         this._statusArea[role] = indicator;
         let destroyId = indicator.connect('destroy', Lang.bind(this, function(emitter) {
-            this._statusArea[role] = null;
+            delete this._statusArea[role];
             emitter.disconnect(destroyId);
         }));
 
         return indicator;
     },
 
-    _onTrayIconAdded: function(o, icon, role) {
-        if (Main.sessionMode.statusArea.implementation[role]) {
-            // This icon is legacy, and replaced by a Shell version
-            // Hide it
-            return;
-        }
+    _onLockStateChanged: function(shield, locked) {
+        if (this._activitiesButton)
+            this._activitiesButton.setLockedState(locked);
+        if (this._appMenu)
+            this._appMenu.setLockedState(locked);
+        if (this._dateMenu)
+            this._dateMenu.setLockedState(locked);
 
-        if (Main.sessionMode.statusArea.order.indexOf(role) == -1)
-            return;
-
-        icon.height = PANEL_ICON_SIZE;
-        let buttonBox = new PanelMenu.ButtonBox();
-        let box = buttonBox.actor;
-        box.add_actor(icon);
-
-        this._insertStatusItem(box, Main.sessionMode.statusArea.order.indexOf(role));
-    },
-
-    _onTrayIconRemoved: function(o, icon) {
-        let box = icon.get_parent();
-        if (box && box._delegate instanceof PanelMenu.ButtonBox)
-            box.destroy();
+        for (let id in this._statusArea)
+            this._statusArea[id].setLockedState(locked);
     },
 });

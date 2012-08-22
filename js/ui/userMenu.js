@@ -1,7 +1,7 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
 
 const AccountsService = imports.gi.AccountsService;
-const GdmGreeter = imports.gi.GdmGreeter;
+const Gdm = imports.gi.Gdm;
 const Gio = imports.gi.Gio;
 const GLib = imports.gi.GLib;
 const Lang = imports.lang;
@@ -16,13 +16,15 @@ const GnomeSession = imports.misc.gnomeSession;
 const Main = imports.ui.main;
 const PanelMenu = imports.ui.panelMenu;
 const PopupMenu = imports.ui.popupMenu;
-const ScreenSaver = imports.misc.screenSaver;
+const Params = imports.misc.params;
 const Util = imports.misc.util;
 
 const LOCKDOWN_SCHEMA = 'org.gnome.desktop.lockdown';
+const SCREENSAVER_SCHEMA = 'org.gnome.desktop.screensaver';
 const DISABLE_USER_SWITCH_KEY = 'disable-user-switching';
 const DISABLE_LOCK_SCREEN_KEY = 'disable-lock-screen';
 const DISABLE_LOG_OUT_KEY = 'disable-log-out';
+const LOCK_ENABLED_KEY = 'lock-enabled';
 
 const DIALOG_ICON_SIZE = 64;
 
@@ -41,6 +43,35 @@ const IMStatus = {
 // Copyright (C) 2004-2005 James M. Cape <jcape@ignore-your.tv>.
 // Copyright (C) 2008,2009 Red Hat, Inc.
 
+const UserAvatarWidget = new Lang.Class({
+    Name: 'UserAvatarWidget',
+
+    _init: function(user, params) {
+        this._user = user;
+        params = Params.parse(params, { reactive: true });
+
+        this.actor = new St.Bin({ style_class: 'status-chooser-user-icon',
+                                  track_hover: params.reactive,
+                                  reactive: params.reactive });
+    },
+
+    update: function() {
+        let iconFile = this._user.get_icon_file();
+        if (!GLib.file_test(iconFile, GLib.FileTest.EXISTS))
+            iconFile = null;
+
+        if (iconFile) {
+            let file = Gio.File.new_for_path(iconFile);
+            this.actor.child = null;
+            this.actor.style = 'background-image: url("%s");'.format(iconFile);
+        } else {
+            this.actor.style = null;
+            this.actor.child = new St.Icon({ icon_name: 'avatar-default',
+                                             icon_type: St.IconType.SYMBOLIC,
+                                             icon_size: DIALOG_ICON_SIZE });
+        }
+    }
+});
 
 const IMStatusItem = new Lang.Class({
     Name: 'IMStatusItem',
@@ -69,6 +100,7 @@ const IMUserNameItem = new Lang.Class({
 
     _init: function() {
         this.parent({ reactive: false,
+                      can_focus: false,
                       style_class: 'status-chooser-user-name' });
 
         this._wrapper = new Shell.GenericContainer();
@@ -106,9 +138,14 @@ const IMStatusChooserItem = new Lang.Class({
 
     _init: function() {
         this.parent({ reactive: false,
+                      can_focus: false,
                       style_class: 'status-chooser' });
 
-        this._iconBin = new St.Button({ style_class: 'status-chooser-user-icon' });
+        this._userManager = AccountsService.UserManager.get_default();
+        this._user = this._userManager.get_user(GLib.get_user_name());
+
+        this._avatar = new UserAvatarWidget(this._user);
+        this._iconBin = new St.Button({ child: this._avatar.actor });
         this.addActor(this._iconBin);
 
         this._iconBin.connect('clicked', Lang.bind(this,
@@ -170,25 +207,22 @@ const IMStatusChooserItem = new Lang.Class({
                                  Lang.bind(this, this._IMAccountsChanged));
         this._accountMgr.prepare_async(null, Lang.bind(this,
             function(mgr) {
-                let [presence, status, msg] = mgr.get_most_available_presence();
-
-                let savedPresence = global.settings.get_int('saved-im-presence');
-
                 this._IMAccountsChanged(mgr);
 
-                if (savedPresence == presence) {
-                    this._IMStatusChanged(mgr, presence, status, msg);
-                } else {
-                    this._setComboboxPresence(savedPresence);
-                    status = this._statusForPresence(savedPresence);
-                    msg = msg ? msg : '';
-                    mgr.set_all_requested_presences(savedPresence, status, msg);
-                }
+                if (this._networkMonitor.network_available)
+                    this._restorePresence();
+                else
+                    this._setComboboxPresence(Tp.ConnectionPresenceType.OFFLINE);
             }));
 
-        this._userManager = AccountsService.UserManager.get_default();
+        this._networkMonitor = Gio.NetworkMonitor.get_default();
+        this._networkMonitor.connect('network-changed',
+            Lang.bind(this, function(monitor, available) {
+                this._IMAccountsChanged(this._accountMgr);
 
-        this._user = this._userManager.get_user(GLib.get_user_name());
+                if (available && !this._imPresenceRestored)
+                    this._restorePresence();
+            }));
 
         this._userLoadedId = this._user.connect('notify::is-loaded',
                                                 Lang.bind(this,
@@ -200,6 +234,21 @@ const IMStatusChooserItem = new Lang.Class({
             if (this.actor.mapped)
                 this._updateUser();
         }));
+    },
+
+    _restorePresence: function() {
+        let [presence, status, msg] = this._accountMgr.get_most_available_presence();
+
+        let savedPresence = global.settings.get_int('saved-im-presence');
+
+        if (savedPresence == presence) {
+            this._IMStatusChanged(this._accountMgr, presence, status, msg);
+        } else {
+            this._setComboboxPresence(savedPresence);
+            status = this._statusForPresence(savedPresence);
+            msg = msg ? msg : '';
+            this._accountMgr.set_all_requested_presences(savedPresence, status, msg);
+        }
     },
 
     destroy: function() {
@@ -227,44 +276,12 @@ const IMStatusChooserItem = new Lang.Class({
     },
 
     _updateUser: function() {
-        let iconFile = null;
-        if (this._user.is_loaded) {
+        if (this._user.is_loaded)
             this._name.label.set_text(this._user.get_real_name());
-            iconFile = this._user.get_icon_file();
-            if (!GLib.file_test(iconFile, GLib.FileTest.EXISTS))
-                iconFile = null;
-        } else {
-            this._name.label.set_text("");
-        }
-
-        if (iconFile)
-            this._setIconFromFile(iconFile);
         else
-            this._setIconFromName('avatar-default');
-    },
+            this._name.label.set_text("");
 
-    _setIconFromFile: function(iconFile) {
-        this._iconBin.set_style('background-image: url("' + iconFile + '");' +
-                                'background-size: contain;');
-        this._iconBin.child = null;
-    },
-
-    _setIconFromName: function(iconName) {
-        this._iconBin.set_style(null);
-
-        if (iconName != null) {
-            let textureCache = St.TextureCache.get_default();
-            let icon = textureCache.load_icon_name(this._iconBin.get_theme_node(),
-                                                   iconName,
-                                                   St.IconType.SYMBOLIC,
-                                                   DIALOG_ICON_SIZE);
-
-            this._iconBin.child = icon;
-            this._iconBin.show();
-        } else {
-            this._iconBin.child = null;
-            this._iconBin.hide();
-        }
+        this._avatar.update();
     },
 
     _statusForPresence: function(presence) {
@@ -290,7 +307,8 @@ const IMStatusChooserItem = new Lang.Class({
         let accounts = mgr.get_valid_accounts().filter(function(account) {
             return account.enabled;
         });
-        this._combo.setSensitive(accounts.length > 0);
+        let sensitive = accounts.length > 0 && this._networkMonitor.network_available;
+        this._combo.setSensitive(sensitive);
     },
 
     _IMStatusChanged: function(accountMgr, presence, status, message) {
@@ -443,6 +461,7 @@ const UserMenuButton = new Lang.Class({
         let box = new St.BoxLayout({ name: 'panelUserMenu' });
         this.actor.add_actor(box);
 
+        this._screenSaverSettings = new Gio.Settings({ schema: SCREENSAVER_SCHEMA });
         this._lockdownSettings = new Gio.Settings({ schema: LOCKDOWN_SCHEMA });
 
         this._userManager = AccountsService.UserManager.get_default();
@@ -455,7 +474,6 @@ const UserMenuButton = new Lang.Class({
         this._accountMgr = Tp.AccountManager.dup();
 
         this._upClient = new UPowerGlib.Client();
-        this._screenSaverProxy = new ScreenSaver.ScreenSaverProxy();
         this.actor.connect('destroy', Lang.bind(this, this._onDestroy));
 
         this._iconBox = new St.Bin();
@@ -542,6 +560,10 @@ const UserMenuButton = new Lang.Class({
         this._upClient.connect('notify::can-suspend', Lang.bind(this, this._updateSuspendOrPowerOff));
     },
 
+    setLockedState: function(locked) {
+        this.actor.visible = !locked;
+    },
+
     _onDestroy: function() {
         this._user.disconnect(this._userLoadedId);
         this._user.disconnect(this._userChangedId);
@@ -562,7 +584,7 @@ const UserMenuButton = new Lang.Class({
     _updateSwitchUser: function() {
         let allowSwitch = !this._lockdownSettings.get_boolean(DISABLE_USER_SWITCH_KEY);
         let multiUser = this._userManager.can_switch() && this._userManager.has_multiple_users;
-        let multiSession = GdmGreeter.get_session_ids().length > 1;
+        let multiSession = Gdm.get_session_ids().length > 1;
 
         this._loginScreenItem.label.set_text(multiUser ? _("Switch User")
                                                        : _("Switch Session"));
@@ -572,7 +594,7 @@ const UserMenuButton = new Lang.Class({
     _updateLogout: function() {
         let allowLogout = !this._lockdownSettings.get_boolean(DISABLE_LOG_OUT_KEY);
         let multiUser = this._userManager.has_multiple_users;
-        let multiSession = GdmGreeter.get_session_ids().length > 1;
+        let multiSession = Gdm.get_session_ids().length > 1;
 
         this._logoutItem.actor.visible = allowLogout && (multiUser || multiSession);
     },
@@ -654,8 +676,10 @@ const UserMenuButton = new Lang.Class({
     },
 
     _onAccountRemoved: function(accountMgr, account) {
-        account.disconnect(account._changingId);
-        account._changingId = 0;
+        if (account._changingId) {
+            account.disconnect(account._changingId);
+            account._changingId = 0;
+        }
         this._updateChangingPresence();
     },
 
@@ -721,17 +745,17 @@ const UserMenuButton = new Lang.Class({
         item = new PopupMenu.PopupSeparatorMenuItem();
         this.menu.addMenuItem(item);
 
-        item = new PopupMenu.PopupMenuItem(_("Install Updates & Restart"));
-        item.connect('activate', Lang.bind(this, this._onInstallUpdatesActivate));
-        this.menu.addMenuItem(item);
-        this._installUpdatesItem = item;
-
         item = new PopupMenu.PopupAlternatingMenuItem(_("Power Off"),
                                                       _("Suspend"));
         this.menu.addMenuItem(item);
         item.connect('activate', Lang.bind(this, this._onSuspendOrPowerOffActivate));
         this._suspendOrPowerOffItem = item;
         this._updateSuspendOrPowerOff();
+
+        item = new PopupMenu.PopupMenuItem(_("Install Updates & Restart"));
+        item.connect('activate', Lang.bind(this, this._onInstallUpdatesActivate));
+        this.menu.addMenuItem(item);
+        this._installUpdatesItem = item;
     },
 
     _updatePresenceStatus: function(item, event) {
@@ -767,16 +791,14 @@ const UserMenuButton = new Lang.Class({
 
     _onLockScreenActivate: function() {
         Main.overview.hide();
-        this._screenSaverProxy.LockRemote();
+        Main.screenShield.lock(true);
     },
 
     _onLoginScreenActivate: function() {
         Main.overview.hide();
-        // Ensure we only move to GDM after the screensaver has activated; in some
-        // OS configurations, the X server may block event processing on VT switch
-        this._screenSaverProxy.SetActiveRemote(true, Lang.bind(this, function() {
-            this._userManager.goto_login_session();
-        }));
+        if (this._screenSaverSettings.get_boolean(LOCK_ENABLED_KEY))
+            Main.screenShield.lock(false);
+        Gdm.goto_login_session_sync(null);
     },
 
     _onQuitSessionActivate: function() {
@@ -798,10 +820,17 @@ const UserMenuButton = new Lang.Class({
             this._suspendOrPowerOffItem.state == PopupMenu.PopupAlternatingMenuItemState.DEFAULT) {
             this._session.ShutdownRemote();
         } else {
-            // Ensure we only suspend after locking the screen
-            this._screenSaverProxy.LockRemote(Lang.bind(this, function() {
+            if (this._screenSaverSettings.get_boolean(LOCK_ENABLED_KEY)) {
+                let tmpId = Main.screenShield.connect('lock-screen-shown', Lang.bind(this, function() {
+                    Main.screenShield.disconnect(tmpId);
+
+                    this._upClient.suspend_sync(null);
+                }));
+
+                Main.screenShield.lock(true);
+            } else {
                 this._upClient.suspend_sync(null);
-            }));
+            }
         }
     }
 });

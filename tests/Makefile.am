@@ -2,6 +2,7 @@ noinst_SCRIPTS = run-test.sh
 EXTRA_DIST = run-test.sh.in
 
 TEST_JS =					\
+	interactive/background-repeat.js	\
 	interactive/background-size.js		\
 	interactive/borders.js			\
 	interactive/border-radius.js		\
@@ -11,6 +12,7 @@ TEST_JS =					\
 	interactive/calendar.js			\
 	interactive/css-fonts.js		\
 	interactive/entry.js			\
+	interactive/gapplication.js		\
 	interactive/icons.js			\
 	interactive/inline-style.js		\
 	interactive/scrolling.js		\
@@ -37,7 +39,6 @@ EXTRA_DIST += $(TEST_MISC)
 run-test.sh: run-test.sh.in
 	$(AM_V_GEN) sed \
 	    -e "s|@MUTTER_TYPELIB_DIR[@]|$(MUTTER_TYPELIB_DIR)|" \
-	    -e "s|@JHBUILD_TYPELIBDIR[@]|$(JHBUILD_TYPELIBDIR)|" \
 	    -e "s|@srcdir[@]|$(srcdir)|" \
 	    $< > $@ && chmod a+x $@
 

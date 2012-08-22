@@ -12,15 +12,17 @@ const Shell = imports.gi.Shell;
 const Signals = imports.signals;
 const Lang = imports.lang;
 const Mainloop = imports.mainloop;
+const System = imports.system;
 
 const History = imports.misc.history;
 const ExtensionSystem = imports.ui.extensionSystem;
 const ExtensionUtils = imports.misc.extensionUtils;
-const Link = imports.ui.link;
 const ShellEntry = imports.ui.shellEntry;
 const Tweener = imports.ui.tweener;
 const Main = imports.ui.main;
 const JsParse = imports.misc.jsParse;
+
+const CHEVRON = '>>> ';
 
 /* Imports...feel free to add here as needed */
 var commandHeader = 'const Clutter = imports.gi.Clutter; ' +
@@ -261,9 +263,8 @@ function objectToString(o) {
 
 const ObjLink = new Lang.Class({
     Name: 'ObjLink',
-    Extends: Link.Link,
 
-    _init: function(o, title) {
+    _init: function(lookingGlass, o, title) {
         let text;
         if (title)
             text = title;
@@ -272,24 +273,30 @@ const ObjLink = new Lang.Class({
         text = GLib.markup_escape_text(text, -1);
         this._obj = o;
 
-        this.parent({ label: text });
+        this.actor = new St.Button({ reactive: true,
+                                     track_hover: true,
+                                     style_class: 'shell-link',
+                                     label: text });
         this.actor.get_child().single_line_mode = true;
         this.actor.connect('clicked', Lang.bind(this, this._onClicked));
+
+        this._lookingGlass = lookingGlass;
     },
 
     _onClicked: function (link) {
-        Main.lookingGlass.inspectObject(this._obj, this.actor);
+        this._lookingGlass.inspectObject(this._obj, this.actor);
     }
 });
 
 const Result = new Lang.Class({
     Name: 'Result',
 
-    _init : function(command, o, index) {
+    _init: function(lookingGlass, command, o, index) {
         this.index = index;
         this.o = o;
 
         this.actor = new St.BoxLayout({ vertical: true });
+        this._lookingGlass = lookingGlass;
 
         let cmdTxt = new St.Label({ text: command });
         cmdTxt.clutter_text.ellipsize = Pango.EllipsizeMode.END;
@@ -299,7 +306,7 @@ const Result = new Lang.Class({
         let resultTxt = new St.Label({ text: 'r(' + index + ') = ' });
         resultTxt.clutter_text.ellipsize = Pango.EllipsizeMode.END;
         box.add(resultTxt);
-        let objLink = new ObjLink(o);
+        let objLink = new ObjLink(this._lookingGlass, o);
         box.add(objLink.actor);
         let line = new Clutter.Rectangle({ name: 'Separator' });
         let padBin = new St.Bin({ name: 'Separator', x_fill: true, y_fill: true });
@@ -311,12 +318,14 @@ const Result = new Lang.Class({
 const WindowList = new Lang.Class({
     Name: 'WindowList',
 
-    _init : function () {
+    _init: function(lookingGlass) {
         this.actor = new St.BoxLayout({ name: 'Windows', vertical: true, style: 'spacing: 8px' });
         let tracker = Shell.WindowTracker.get_default();
         this._updateId = Main.initializeDeferredWork(this.actor, Lang.bind(this, this._updateWindowList));
         global.display.connect('window-created', Lang.bind(this, this._updateWindowList));
         tracker.connect('tracked-windows-changed', Lang.bind(this, this._updateWindowList));
+
+        this._lookingGlass = lookingGlass;
     },
 
     _updateWindowList: function() {
@@ -332,7 +341,7 @@ const WindowList = new Lang.Class({
             }
             let box = new St.BoxLayout({ vertical: true });
             this.actor.add(box);
-            let windowLink = new ObjLink(metaWindow, metaWindow.title);
+            let windowLink = new ObjLink(this._lookingGlass, metaWindow, metaWindow.title);
             box.add(windowLink.actor, { x_align: St.Align.START, x_fill: false });
             let propsBox = new St.BoxLayout({ vertical: true, style: 'padding-left: 6px;' });
             box.add(propsBox);
@@ -343,7 +352,7 @@ const WindowList = new Lang.Class({
                 let propBox = new St.BoxLayout({ style: 'spacing: 6px; ' });
                 propsBox.add(propBox);
                 propBox.add(new St.Label({ text: 'app: ' }), { y_fill: false });
-                let appLink = new ObjLink(app, app.get_id());
+                let appLink = new ObjLink(this._lookingGlass, app, app.get_id());
                 propBox.add(appLink.actor, { y_fill: false });
                 propBox.add(icon, { y_fill: false });
             } else {
@@ -357,7 +366,7 @@ Signals.addSignalMethods(WindowList.prototype);
 const ObjInspector = new Lang.Class({
     Name: 'ObjInspector',
 
-    _init : function () {
+    _init: function(lookingGlass) {
         this._obj = null;
         this._previousObj = null;
 
@@ -369,6 +378,8 @@ const ObjInspector = new Lang.Class({
                                              style_class: 'lg-dialog',
                                              vertical: true });
         this.actor.add_actor(this._container);
+
+        this._lookingGlass = lookingGlass;
     },
 
     selectObject: function(obj, skipPrevious) {
@@ -412,7 +423,7 @@ const ObjInspector = new Lang.Class({
                 let link;
                 try {
                     let prop = obj[propName];
-                    link = new ObjLink(prop).actor;
+                    link = new ObjLink(this._lookingGlass, prop).actor;
                 } catch (e) {
                     link = new St.Label({ text: '<error>' });
                 }
@@ -457,7 +468,7 @@ const ObjInspector = new Lang.Class({
     _onInsert: function() {
         let obj = this._obj;
         this.close();
-        Main.lookingGlass.insertObject(obj);
+        this._lookingGlass.insertObject(obj);
     },
 
     _onBack: function() {
@@ -494,7 +505,7 @@ const RedBorderEffect = new Lang.Class({
 const Inspector = new Lang.Class({
     Name: 'Inspector',
 
-    _init: function() {
+    _init: function(lookingGlass) {
         let container = new Shell.GenericContainer({ width: 0,
                                                      height: 0 });
         container.connect('allocate', Lang.bind(this, this._allocate));
@@ -508,9 +519,6 @@ const Inspector = new Lang.Class({
         this._displayText = new St.Label();
         eventHandler.add(this._displayText, { expand: true });
 
-        this._borderPaintTarget = null;
-        this._redBorderEffect = new RedBorderEffect();
-        eventHandler.connect('destroy', Lang.bind(this, this._onDestroy));
         eventHandler.connect('key-press-event', Lang.bind(this, this._onKeyPressEvent));
         eventHandler.connect('button-press-event', Lang.bind(this, this._onButtonPressEvent));
         eventHandler.connect('scroll-event', Lang.bind(this, this._onScrollEvent));
@@ -525,6 +533,8 @@ const Inspector = new Lang.Class({
         // out, or move the pointer outside of _pointerTarget.
         this._target = null;
         this._pointerTarget = null;
+
+        this._lookingGlass = lookingGlass;
     },
 
     _allocate: function(actor, box, flags) {
@@ -545,16 +555,11 @@ const Inspector = new Lang.Class({
     },
 
     _close: function() {
-        Clutter.ungrab_pointer(this._eventHandler);
-        Clutter.ungrab_keyboard(this._eventHandler);
+        Clutter.ungrab_pointer();
+        Clutter.ungrab_keyboard();
         this._eventHandler.destroy();
         this._eventHandler = null;
         this.emit('closed');
-    },
-
-    _onDestroy: function() {
-        if (this._borderPaintTarget != null)
-            this._borderPaintTarget.remove_effect(this._redBorderEffect);
     },
 
     _onKeyPressEvent: function (actor, event) {
@@ -625,13 +630,7 @@ const Inspector = new Lang.Class({
         this._displayText.text = '';
         this._displayText.text = position + ' ' + this._target;
 
-        if (this._borderPaintTarget != this._target) {
-            if (this._borderPaintTarget != null)
-                this._borderPaintTarget.remove_effect(this._redBorderEffect);
-            this._borderPaintTarget = this._target;
-            if (this._borderPaintTarget != null)
-                this._borderPaintTarget.add_effect(this._redBorderEffect);
-        }
+        this._lookingGlass.setBorderPaintTarget(this._target);
     }
 });
 
@@ -665,7 +664,7 @@ const Memory = new Lang.Class({
 
         this._gcbutton = new St.Button({ label: 'Full GC',
                                          style_class: 'lg-obj-inspector-button' });
-        this._gcbutton.connect('clicked', Lang.bind(this, function () { global.gc(); this._renderText(); }));
+        this._gcbutton.connect('clicked', Lang.bind(this, function () { System.gc(); this._renderText(); }));
         this.actor.add(this._gcbutton, { x_align: St.Align.START,
                                          x_fill: false });
 
@@ -726,13 +725,13 @@ const Extensions = new Lang.Class({
         let extension = actor._extension;
         let uri = extension.dir.get_uri();
         Gio.app_info_launch_default_for_uri(uri, global.create_app_launch_context());
-        Main.lookingGlass.close();
+        this._lookingGlass.close();
     },
 
     _onWebPage: function (actor) {
         let extension = actor._extension;
         Gio.app_info_launch_default_for_uri(extension.metadata.url, global.create_app_launch_context());
-        Main.lookingGlass.close();
+        this._lookingGlass.close();
     },
 
     _onViewErrors: function (actor) {
@@ -796,24 +795,33 @@ const Extensions = new Lang.Class({
                                    text: this._stateToString(extension.state) });
         metaBox.add(state);
 
-        let viewsource = new Link.Link({ label: _("View Source") });
-        viewsource.actor._extension = extension;
-        viewsource.actor.connect('clicked', Lang.bind(this, this._onViewSource));
-        metaBox.add(viewsource.actor);
+        let viewsource = new St.Button({ reactive: true,
+                                         track_hover: true,
+                                         style_class: 'shell-link',
+                                         label: _("View Source") });
+        viewsource._extension = extension;
+        viewsource.connect('clicked', Lang.bind(this, this._onViewSource));
+        metaBox.add(viewsource);
 
         if (extension.metadata.url) {
-            let webpage = new Link.Link({ label: _("Web Page") });
-            webpage.actor._extension = extension;
-            webpage.actor.connect('clicked', Lang.bind(this, this._onWebPage));
-            metaBox.add(webpage.actor);
+            let webpage = new St.Button({ reactive: true,
+                                          track_hover: true,
+                                          style_class: 'shell-link',
+                                          label: _("Web Page") });
+            webpage._extension = extension;
+            webpage.connect('clicked', Lang.bind(this, this._onWebPage));
+            metaBox.add(webpage);
         }
 
-        let viewerrors = new Link.Link({ label: _("Show Errors") });
-        viewerrors.actor._extension = extension;
-        viewerrors.actor._parentBox = box;
-        viewerrors.actor._isShowing = false;
-        viewerrors.actor.connect('clicked', Lang.bind(this, this._onViewErrors));
-        metaBox.add(viewerrors.actor);
+        let viewerrors = new St.Button({ reactive: true,
+                                         track_hover: true,
+                                         style_class: 'shell-link',
+                                         label: _("Show Errors") });
+        viewerrors._extension = extension;
+        viewerrors._parentBox = box;
+        viewerrors._isShowing = false;
+        viewerrors.connect('clicked', Lang.bind(this, this._onViewErrors));
+        metaBox.add(viewerrors);
 
         return box;
     }
@@ -854,7 +862,7 @@ const LookingGlass = new Lang.Class({
         Main.layoutManager.keyboardBox.connect('allocation-changed',
                                                Lang.bind(this, this._queueResize));
 
-        this._objInspector = new ObjInspector();
+        this._objInspector = new ObjInspector(this);
         Main.uiGroup.add_actor(this._objInspector.actor);
         this._objInspector.actor.hide();
 
@@ -866,7 +874,7 @@ const LookingGlass = new Lang.Class({
         toolbar.add_actor(inspectIcon);
         inspectIcon.reactive = true;
         inspectIcon.connect('button-press-event', Lang.bind(this, function () {
-            let inspector = new Inspector();
+            let inspector = new Inspector(this);
             inspector.connect('target', Lang.bind(this, function(i, target, stageX, stageY) {
                 this._pushResult('<inspect x:' + stageX + ' y:' + stageY + '>',
                                  target);
@@ -896,18 +904,14 @@ const LookingGlass = new Lang.Class({
         this._entryArea = new St.BoxLayout({ name: 'EntryArea' });
         this._evalBox.add_actor(this._entryArea);
 
-        let label = new St.Label({ text: 'js>>> ' });
+        let label = new St.Label({ text: CHEVRON });
         this._entryArea.add(label);
 
         this._entry = new St.Entry({ can_focus: true });
         ShellEntry.addContextMenu(this._entry);
         this._entryArea.add(this._entry, { expand: true });
 
-        this._windowList = new WindowList();
-        this._windowList.connect('selected', Lang.bind(this, function(list, window) {
-            notebook.selectIndex(0);
-            this._pushResult('<window selection>', window);
-        }));
+        this._windowList = new WindowList(this);
         notebook.appendPage('Windows', this._windowList.actor);
 
         this._memory = new Memory();
@@ -961,7 +965,7 @@ const LookingGlass = new Lang.Class({
             + 'font-family: "' + fontDesc.get_family() + '";';
     },
 
-    _setBorderPaintTarget: function(obj) {
+    setBorderPaintTarget: function(obj) {
         if (this._borderPaintTarget != null)
             this._borderPaintTarget.remove_effect(this._redBorderEffect);
         this._borderPaintTarget = obj;
@@ -971,11 +975,11 @@ const LookingGlass = new Lang.Class({
 
     _pushResult: function(command, obj) {
         let index = this._results.length + this._offset;
-        let result = new Result('>>> ' + command, obj, index);
+        let result = new Result(this, CHEVRON + command, obj, index);
         this._results.push(result);
         this._resultsArea.add(result.actor);
         if (obj instanceof Clutter.Actor)
-            this._setBorderPaintTarget(obj);
+            this.setBorderPaintTarget(obj);
 
         let children = this._resultsArea.get_children();
         if (children.length > this._maxItems) {
@@ -1157,7 +1161,7 @@ const LookingGlass = new Lang.Class({
         this._open = false;
         Tweener.removeTweens(this.actor);
 
-        this._setBorderPaintTarget(null);
+        this.setBorderPaintTarget(null);
 
         Main.popModal(this._entry);
 

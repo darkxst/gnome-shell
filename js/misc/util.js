@@ -1,9 +1,6 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
 
-const Gdk = imports.gi.Gdk;
-const Gio = imports.gi.Gio;
 const GLib = imports.gi.GLib;
-const Shell = imports.gi.Shell;
 
 const Main = imports.ui.main;
 
@@ -87,7 +84,7 @@ function trySpawn(argv)
     try {
         [success, pid] = GLib.spawn_async(null, argv, null,
                                           GLib.SpawnFlags.SEARCH_PATH | GLib.SpawnFlags.DO_NOT_REAP_CHILD,
-                                          null, null);
+                                          null);
     } catch (err) {
         /* Rewrite the error in case of ENOENT */
         if (err.matches(GLib.SpawnError, GLib.SpawnError.NOENT)) {
@@ -153,7 +150,7 @@ function killall(processName) {
         // whatever...
 
         let argv = ['pkill', '-f', '^([^ ]*/)?' + processName + '($| )'];
-        GLib.spawn_sync(null, argv, null, GLib.SpawnFlags.SEARCH_PATH, null, null);
+        GLib.spawn_sync(null, argv, null, GLib.SpawnFlags.SEARCH_PATH, null);
         // It might be useful to return success/failure, but we'd need
         // a wrapper around WIFEXITED and WEXITSTATUS. Since none of
         // the current callers care, we don't bother.

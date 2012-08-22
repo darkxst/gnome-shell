@@ -1,6 +1,7 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
 
 const Clutter = imports.gi.Clutter;
+const GdkPixbuf = imports.gi.GdkPixbuf;
 const Gio = imports.gi.Gio;
 const GLib = imports.gi.GLib;
 const Lang = imports.lang;
@@ -87,6 +88,21 @@ const rewriteRules = {
     ]
 };
 
+const STANDARD_TRAY_ICON_IMPLEMENTATIONS = {
+    'bluetooth-applet': 'bluetooth',
+    'gnome-volume-control-applet': 'volume', // renamed to gnome-sound-applet
+                                             // when moved to control center
+    'gnome-sound-applet': 'volume',
+    'nm-applet': 'network',
+    'gnome-power-manager': 'battery',
+    'keyboard': 'keyboard',
+    'a11y-keyboard': 'a11y',
+    'kbd-scrolllock': 'keyboard',
+    'kbd-numlock': 'keyboard',
+    'kbd-capslock': 'keyboard',
+    'ibus-ui-gtk': 'keyboard'
+};
+
 const NotificationDaemon = new Lang.Class({
     Name: 'NotificationDaemon',
 
@@ -99,18 +115,19 @@ const NotificationDaemon = new Lang.Class({
         this._notifications = {};
         this._busProxy = new Bus();
 
-        Main.statusIconDispatcher.connect('message-icon-added', Lang.bind(this, this._onTrayIconAdded));
-        Main.statusIconDispatcher.connect('message-icon-removed', Lang.bind(this, this._onTrayIconRemoved));
+        this._trayManager = new Shell.TrayManager();
+        this._trayManager.connect('tray-icon-added', Lang.bind(this, this._onTrayIconAdded));
+        this._trayManager.connect('tray-icon-removed', Lang.bind(this, this._onTrayIconRemoved));
 
         Shell.WindowTracker.get_default().connect('notify::focus-app',
             Lang.bind(this, this._onFocusAppChanged));
         Main.overview.connect('hidden',
             Lang.bind(this, this._onFocusAppChanged));
+
+        this._trayManager.manage_stage(global.stage, Main.messageTray.actor);
     },
 
-    _iconForNotificationData: function(icon, hints, size) {
-        let textureCache = St.TextureCache.get_default();
-
+    _iconForNotificationData: function(icon, hints) {
         // If an icon is not specified, we use 'image-data' or 'image-path' hint for an icon
         // and don't show a large image. There are currently many applications that use
         // notify_notification_set_icon_from_pixbuf() from libnotify, which in turn sets
@@ -121,20 +138,18 @@ const NotificationDaemon = new Lang.Class({
         // a large image.
         if (icon) {
             if (icon.substr(0, 7) == 'file://')
-                return textureCache.load_uri_async(icon, size, size);
+                return new Gio.FileIcon({ file: Gio.File.new_for_uri(icon) });
             else if (icon[0] == '/') {
-                let uri = GLib.filename_to_uri(icon, null);
-                return textureCache.load_uri_async(uri, size, size);
+                return new Gio.FileIcon({ file: Gio.File.new_for_path(icon) });
             } else
-                return new St.Icon({ icon_name: icon,
-                                     icon_type: St.IconType.FULLCOLOR,
-                                     icon_size: size });
+                return new Gio.ThemedIcon({ name: icon });
         } else if (hints['image-data']) {
             let [width, height, rowStride, hasAlpha,
                  bitsPerSample, nChannels, data] = hints['image-data'];
-            return textureCache.load_from_raw(data, hasAlpha, width, height, rowStride, size);
+            return Shell.util_create_pixbuf_from_data(data, GdkPixbuf.Colorspace.RGB, hasAlpha,
+                                                      bitsPerSample, width, height, rowStride);
         } else if (hints['image-path']) {
-            return textureCache.load_uri_async(GLib.filename_to_uri(hints['image-path'], null), size, size);
+            return new Gio.FileIcon({ file: Gio.File.new_for_path(hints['image-path']) });
         } else {
             let stockIcon;
             switch (hints.urgency) {
@@ -146,9 +161,7 @@ const NotificationDaemon = new Lang.Class({
                     stockIcon = 'gtk-dialog-error';
                     break;
             }
-            return new St.Icon({ icon_name: stockIcon,
-                                 icon_type: St.IconType.FULLCOLOR,
-                                 icon_size: size });
+            return new Gio.ThemedIcon({ name: stockIcon });
         }
     },
 
@@ -341,7 +354,10 @@ const NotificationDaemon = new Lang.Class({
             [ndata.id, ndata.icon, ndata.summary, ndata.body,
              ndata.actions, ndata.hints, ndata.notification];
 
-        let iconActor = this._iconForNotificationData(icon, hints, source.ICON_SIZE);
+        let gicon = this._iconForNotificationData(icon, hints);
+        let iconActor = new St.Icon({ gicon: gicon,
+                                      icon_type: St.IconType.FULLCOLOR,
+                                      icon_size: MessageTray.NOTIFICATION_ICON_SIZE });
 
         if (notification == null) {
             notification = new MessageTray.Notification(source, summary, body,
@@ -421,8 +437,8 @@ const NotificationDaemon = new Lang.Class({
         // of the 'transient' hint with hints['transient'] rather than hints.transient
         notification.setTransient(hints['transient'] == true);
 
-        let sourceIconActor = source.useNotificationIcon ? this._iconForNotificationData(icon, hints, source.ICON_SIZE) : null;
-        source.processNotification(notification, sourceIconActor);
+        let sourceGIcon = source.useNotificationIcon ? this._iconForNotificationData(icon, hints) : null;
+        source.processNotification(notification, sourceGIcon);
     },
 
     CloseNotification: function(id) {
@@ -483,6 +499,10 @@ const NotificationDaemon = new Lang.Class({
     },
 
     _onTrayIconAdded: function(o, icon) {
+        let wmClass = icon.wm_class.toLowerCase();
+        if (STANDARD_TRAY_ICON_IMPLEMENTATIONS[wmClass] !== undefined)
+            return;
+
         let source = this._getSource(icon.title || icon.wm_class || C_("program", "Unknown"), icon.pid, null, null, icon);
     },
 
@@ -534,11 +554,11 @@ const Source = new Lang.Class({
             this.destroy();
     },
 
-    processNotification: function(notification, icon) {
-        if (!this.app)
-            this._setApp();
-        if (!this.app && icon)
-            this._setSummaryIcon(icon);
+    processNotification: function(notification, gicon) {
+        if (gicon)
+            this._gicon = gicon;
+        if (!this.trayIcon)
+            this.iconUpdated();
 
         let tracker = Shell.WindowTracker.get_default();
         if (notification.resident && this.app && tracker.focus_app == this.app)
@@ -606,8 +626,18 @@ const Source = new Lang.Class({
         // notification-based icons (ie, not a trayicon) or if it was unset before
         if (!this.trayIcon) {
             this.useNotificationIcon = false;
-            this._setSummaryIcon(this.app.create_icon_texture (this.ICON_SIZE));
+            this.iconUpdated();
         }
+    },
+
+    setTitle: function(title) {
+        // Do nothing if .app is set, we don't want to override the
+        // app name with whatever is provided through libnotify (usually
+        // garbage)
+        if (this.app)
+            return;
+
+        this.parent(title);
     },
 
     open: function(notification) {
@@ -640,8 +670,18 @@ const Source = new Lang.Class({
         this.parent();
     },
 
-    createNotificationIcon: function() {
-        // We set the summary icon ourselves.
-        return null;
+    createIcon: function(size) {
+        if (this.trayIcon) {
+            return new Clutter.Clone({ width: size,
+                                       height: size,
+                                       source: this.trayIcon });
+        } else if (this.app) {
+            return this.app.create_icon_texture(size);
+        } else if (this._gicon) {
+            return new St.Icon({ gicon: this._gicon,
+                                 icon_size: size });
+        } else {
+            return null;
+        }
     }
 });

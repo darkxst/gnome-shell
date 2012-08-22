@@ -1,6 +1,7 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
 
 const Clutter = imports.gi.Clutter;
+const GObject = imports.gi.GObject;
 const Lang = imports.lang;
 const Mainloop = imports.mainloop;
 const Meta = imports.gi.Meta;
@@ -11,12 +12,84 @@ const St = imports.gi.St;
 const DND = imports.ui.dnd;
 const Main = imports.ui.main;
 const Params = imports.misc.params;
-const ScreenSaver = imports.misc.screenSaver;
 const Tweener = imports.ui.tweener;
 
 const HOT_CORNER_ACTIVATION_TIMEOUT = 0.5;
 const STARTUP_ANIMATION_TIME = 0.2;
 const KEYBOARD_ANIMATION_TIME = 0.5;
+
+const MonitorConstraint = new Lang.Class({
+    Name: 'MonitorConstraint',
+    Extends: Clutter.Constraint,
+    Properties: {'primary': GObject.ParamSpec.boolean('primary', 
+                                                      'Primary', 'Track primary monitor',
+                                                      GObject.ParamFlags.READABLE | GObject.ParamFlags.WRITABLE,
+                                                      false),
+                 'index': GObject.ParamSpec.int('index',
+                                                'Monitor index', 'Track specific monitor',
+                                                GObject.ParamFlags.READABLE | GObject.ParamFlags.WRITABLE,
+                                                -1, 64, -1)},
+
+    _init: function(props) {
+        this._primary = false;
+        this._index = -1;
+
+        this.parent(props);
+    },
+
+    get primary() {
+        return this._primary;
+    },
+
+    set primary(v) {
+        this._primary = v;
+        if (this.actor)
+            this.actor.queue_relayout();
+        this.notify('primary');
+    },
+
+    get index() {
+        return this._index;
+    },
+
+    set index(v) {
+        this._index = v;
+        if (this.actor)
+            this.actor.queue_relayout();
+        this.notify('index');
+    },
+
+    vfunc_set_actor: function(actor) {
+        if (actor) {
+            if (!this._monitorsChangedId) {
+                this._monitorsChangedId = Main.layoutManager.connect('monitors-changed', Lang.bind(this, function() {
+                    this.actor.queue_relayout();
+                }));
+            }
+        } else {
+            if (this._monitorsChangedId)
+                Main.layoutManager.disconnect(this._monitorsChangedId);
+            this._monitorsChangedId = 0;
+        }
+
+        this.parent(actor);
+    },
+
+    vfunc_update_allocation: function(actor, actorBox) {
+        if (!this._primary && this._index < 0)
+            return;
+
+        let monitor;
+        if (this._primary) {
+            monitor = Main.layoutManager.primaryMonitor;
+        } else {
+            let index = Math.min(this._index, Main.layoutManager.monitors.length - 1);
+            monitor = Main.layoutManager.monitors[index];
+        }
+
+        actorBox.init_rect(monitor.x, monitor.y, monitor.width, monitor.height);
+    }
+});
 
 const LayoutManager = new Lang.Class({
     Name: 'LayoutManager',
@@ -33,21 +106,29 @@ const LayoutManager = new Lang.Class({
 
         this._chrome = new Chrome(this);
 
+        this.screenShieldGroup = new St.Widget({ name: 'screenShieldGroup',
+                                                 visible: false,
+                                                 clip_to_allocation: true,
+                                                 layout_manager: new Clutter.BinLayout(),
+                                               });
+        this.addChrome(this.screenShieldGroup);
+
         this.panelBox = new St.BoxLayout({ name: 'panelBox',
                                            vertical: true });
-        this.addChrome(this.panelBox, { affectsStruts: true });
+        this.addChrome(this.panelBox, { affectsStruts: true,
+                                        trackFullscreen: true });
         this.panelBox.connect('allocation-changed',
                               Lang.bind(this, this._updatePanelBarriers));
 
         this.trayBox = new St.BoxLayout({ name: 'trayBox' }); 
-        this.addChrome(this.trayBox, { visibleInFullscreen: true });
+        this.addChrome(this.trayBox);
         this.trayBox.connect('allocation-changed',
                              Lang.bind(this, this._updateTrayBarrier));
 
         this.keyboardBox = new St.BoxLayout({ name: 'keyboardBox',
                                               reactive: true,
                                               track_hover: true });
-        this.addChrome(this.keyboardBox, { visibleInFullscreen: true });
+        this.addChrome(this.keyboardBox);
         this._keyboardHeightNotifyId = 0;
 
         global.screen.connect('monitors-changed',
@@ -149,6 +230,9 @@ const LayoutManager = new Lang.Class({
     },
 
     _updateBoxes: function() {
+        this.screenShieldGroup.set_position(0, 0);
+        this.screenShieldGroup.set_size(global.screen_width, global.screen_height);
+
         this.panelBox.set_position(this.primaryMonitor.x, this.primaryMonitor.y);
         this.panelBox.set_size(this.primaryMonitor.width, -1);
 
@@ -230,7 +314,7 @@ const LayoutManager = new Lang.Class({
 
     get currentMonitor() {
         let index = global.screen.get_current_monitor();
-        return Main.layoutManager.monitors[index];
+        return this.monitors[index];
     },
 
     _startupAnimation: function() {
@@ -318,8 +402,10 @@ const LayoutManager = new Lang.Class({
     // the window manager struts. Changes to @actor's visibility will
     // NOT affect whether or not the strut is present, however.
     //
-    // If %visibleInFullscreen in @params is %true, the actor will be
-    // visible even when a fullscreen window should be covering it.
+    // If %trackFullscreen in @params is %true, the actor's visibility
+    // will be bound to the presence of fullscreen windows on the same
+    // monitor (it will be hidden whenever a fullscreen window is visible,
+    // and shown otherwise)
     addChrome: function(actor, params) {
         this._chrome.addActor(actor, params);
     },
@@ -333,10 +419,8 @@ const LayoutManager = new Lang.Class({
     // struts or input region to cover specific children.
     //
     // @params can have any of the same values as in addChrome(),
-    // though some possibilities don't make sense (eg, trying to have
-    // a %visibleInFullscreen child of a non-%visibleInFullscreen
-    // parent). By default, @actor has the same params as its chrome
-    // ancestor.
+    // though some possibilities don't make sense. By default, @actor has
+    // the same params as its chrome ancestor.
     trackChrome: function(actor, params) {
         this._chrome.trackActor(actor, params);
     },
@@ -542,7 +626,7 @@ const HotCorner = new Lang.Class({
 // workspace content.
 
 const defaultParams = {
-    visibleInFullscreen: false,
+    trackFullscreen: false,
     affectsStruts: false,
     affectsInputRegion: true
 };
@@ -555,6 +639,7 @@ const Chrome = new Lang.Class({
 
         this._monitors = [];
         this._inOverview = false;
+        this._isLocked = false;
         this._updateRegionIdle = 0;
         this._freezeUpdateCount = 0;
 
@@ -569,16 +654,6 @@ const Chrome = new Lang.Class({
         global.screen.connect('notify::n-workspaces',
                               Lang.bind(this, this._queueUpdateRegions));
 
-        this._screenSaverActive = false;
-        this._screenSaverProxy = new ScreenSaver.ScreenSaverProxy();
-        this._screenSaverProxy.connectSignal('ActiveChanged', Lang.bind(this, function(proxy, senderName, [isActive]) {
-            this._onScreenSaverActiveChanged(isActive);
-        }));
-        this._screenSaverProxy.GetActiveRemote(Lang.bind(this, function(result, err) {
-            if (!err)
-                this._onScreenSaverActiveChanged(result[0]);
-        }));
-
         this._relayout();
     },
 
@@ -587,6 +662,8 @@ const Chrome = new Lang.Class({
                              Lang.bind(this, this._overviewShowing));
         Main.overview.connect('hidden',
                              Lang.bind(this, this._overviewHidden));
+        Main.screenShield.connect('lock-status-changed',
+                                  Lang.bind(this, this._lockStatusChanged));
     },
 
     addActor: function(actor, params) {
@@ -681,19 +758,18 @@ const Chrome = new Lang.Class({
     _updateVisibility: function() {
         for (let i = 0; i < this._trackedActors.length; i++) {
             let actorData = this._trackedActors[i], visible;
+            if (!actorData.trackFullscreen)
+                continue;
             if (!actorData.isToplevel)
                 continue;
 
-            if (this._screenSaverActive)
-                visible = false;
-            else if (this._inOverview)
+            if (this._inOverview || this._isLocked)
                 visible = true;
-            else if (!actorData.visibleInFullscreen &&
-                     this.findMonitorForActor(actorData.actor).inFullscreen)
+            else if (this.findMonitorForActor(actorData.actor).inFullscreen)
                 visible = false;
             else
                 visible = true;
-            Main.uiGroup.set_skip_paint(actorData.actor, !visible);
+            actorData.actor.visible = visible;
         }
     },
 
@@ -709,17 +785,17 @@ const Chrome = new Lang.Class({
         this._queueUpdateRegions();
     },
 
+    _lockStatusChanged: function(shield, locked) {
+        this._isLocked = locked;
+        this._updateVisibility();
+        this._queueUpdateRegions();
+    },
+
     _relayout: function() {
         this._monitors = this._layoutManager.monitors;
         this._primaryMonitor = this._layoutManager.primaryMonitor;
 
         this._updateFullscreen();
-        this._updateVisibility();
-        this._queueUpdateRegions();
-    },
-
-    _onScreenSaverActiveChanged: function(screenSaverActive) {
-        this._screenSaverActive = screenSaverActive;
         this._updateVisibility();
         this._queueUpdateRegions();
     },

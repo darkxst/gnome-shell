@@ -30,15 +30,16 @@ const LookingGlass = imports.ui.lookingGlass;
 const NetworkAgent = imports.ui.networkAgent;
 const NotificationDaemon = imports.ui.notificationDaemon;
 const WindowAttentionHandler = imports.ui.windowAttentionHandler;
+const ScreenShield = imports.ui.screenShield;
 const Scripting = imports.ui.scripting;
 const SessionMode = imports.ui.sessionMode;
 const ShellDBus = imports.ui.shellDBus;
 const ShellMountOperation = imports.ui.shellMountOperation;
 const TelepathyClient = imports.ui.telepathyClient;
+const UnlockDialog = imports.ui.unlockDialog;
 const WindowManager = imports.ui.windowManager;
 const Magnifier = imports.ui.magnifier;
 const XdndHandler = imports.ui.xdndHandler;
-const StatusIconDispatcher = imports.ui.statusIconDispatcher;
 const Util = imports.misc.util;
 
 const OVERRIDES_SCHEMA = 'org.gnome.shell.overrides';
@@ -54,6 +55,7 @@ let runDialog = null;
 let lookingGlass = null;
 let wm = null;
 let messageTray = null;
+let screenShield = null;
 let notificationDaemon = null;
 let windowAttentionHandler = null;
 let telepathyClient = null;
@@ -62,12 +64,12 @@ let recorder = null;
 let sessionMode = null;
 let shellDBusService = null;
 let shellMountOpDBusService = null;
+let screenSaverDBus = null;
 let modalCount = 0;
 let modalActorFocusStack = [];
 let uiGroup = null;
 let magnifier = null;
 let xdndHandler = null;
-let statusIconDispatcher = null;
 let keyboard = null;
 let layoutManager = null;
 let networkAgent = null;
@@ -92,14 +94,21 @@ function createUserSession() {
 }
 
 function createGDMSession() {
+    screenShield.showDialog();
+}
+
+function createGDMLoginDialog(parentActor) {
     // We do this this here instead of at the top to prevent GDM
     // related code from getting loaded in normal user sessions
     const LoginDialog = imports.gdm.loginDialog;
 
-    let loginDialog = new LoginDialog.LoginDialog();
-    loginDialog.connect('loaded', function() {
-                            loginDialog.open();
-                        });
+    let loginDialog = new LoginDialog.LoginDialog(parentActor);
+    return [loginDialog, true];
+}
+
+function createSessionUnlockDialog(parentActor) {
+    let dialog = new UnlockDialog.UnlockDialog(parentActor);
+    return [dialog, false];
 }
 
 function createInitialSetupSession() {
@@ -203,7 +212,8 @@ function start() {
     ctrlAltTabManager = new CtrlAltTab.CtrlAltTabManager();
     overview = new Overview.Overview();
     magnifier = new Magnifier.Magnifier();
-    statusIconDispatcher = new StatusIconDispatcher.StatusIconDispatcher();
+    screenShield = new ScreenShield.ScreenShield();
+    screenSaverDBus = new ShellDBus.ScreenSaverDBus();
     panel = new Panel.Panel();
     wm = new WindowManager.WindowManager();
     messageTray = new MessageTray.MessageTray();
@@ -242,8 +252,6 @@ function start() {
         global.display.connect('overlay-key',
                                Lang.bind(overview, overview.toggle));
     }
-
-    statusIconDispatcher.start(messageTray.actor);
 
     // Provide the bus object for gnome-session to
     // initiate logouts.
@@ -524,6 +532,7 @@ function notify(msg, details) {
     messageTray.add(source);
     let notification = new MessageTray.Notification(source, msg, details);
     notification.setTransient(true);
+    notification.setShowWhenLocked(true);
     source.notify(notification);
 }
 
@@ -579,12 +588,6 @@ function _globalKeyPressHandler(actor, event) {
     // This relies on the fact that Clutter.ModifierType is the same as Gdk.ModifierType
     let action = global.display.get_keybinding_action(keyCode, modifierState);
 
-    // This isn't a Meta.KeyBindingAction yet
-    if (symbol == Clutter.Super_L || symbol == Clutter.Super_R) {
-        overview.hide();
-        return true;
-    }
-
     if (action == Meta.KeyBindingAction.SWITCH_PANELS) {
         ctrlAltTabManager.popup(modifierState & Clutter.ModifierType.SHIFT_MASK,
                                 modifierState);
@@ -627,6 +630,7 @@ function _globalKeyPressHandler(actor, event) {
             getRunDialog().open();
             return true;
         case Meta.KeyBindingAction.PANEL_MAIN_MENU:
+        case Meta.KeyBindingAction.OVERLAY_KEY:
             overview.hide();
             return true;
     }
@@ -640,6 +644,10 @@ function _findModal(actor) {
             return i;
     }
     return -1;
+}
+
+function isInModalStack(actor) {
+    return _findModal(actor) != -1;
 }
 
 /**
@@ -683,7 +691,7 @@ function pushModal(actor, timestamp, options) {
     let actorDestroyId = actor.connect('destroy', function() {
         let index = _findModal(actor);
         if (index >= 0)
-            modalActorFocusStack.splice(index, 1);
+            popModal(actor);
     });
     let curFocus = global.stage.get_key_focus();
     let curFocusDestroyId;

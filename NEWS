@@ -1,3 +1,145 @@
+3.5.90
+======
+* Use symbolic icons for workspace switch OSD [Jon; #680738]
+* Lock screen improvements:
+  - Hide user menu and a11y menu in the screen lock [Giovanni; #681143]
+  - Bump the lock screen slightly when pressing a key [Giovanni; #681143]
+  - Constrain vertical movement of the screen shield [Giovanni; #681143]
+  - Return to lock screen on idle [Giovanni; #682041]
+  - Unlock screen automatically after fast-user switching [Giovanni; #682096]
+  - Fix "other user" label [Ray; #681750]
+* Constrain content of system modals to primary monitor [#681743]
+* Respect automatic lock setting on suspend/user-switch [Giovanni; #680231]
+* Improve styling of keyring prompt [Jasper; #681821]
+* Do not hard-code <super> as overlay-key [Florian; #665547]
+* Update style of attached modal dialogs [Florian; #681601]
+* a11y: allow navigation on non reactive items [Alejandro; #667439, #667439]
+* Implement mode-less overview design [Joost, Florian; #682109]
+* Implement message-tray redesign:
+  - Restyle the message tray [Ana, Allan, Florian; #677213, #682342]
+  - Move the desktop upwards when showing the tray [Debarshi; #681392]
+  - Add a close button to notifications [Ana, Jasper; #682253]
+  - Add a keybinding to toggle the tray [Debarshi; #681392]
+  - Make the tray keyboard navigable [Debarshi; #681519]
+  - Add dwelling at the bottom of the screen to open the tray [Owen; #682310]
+  - Don't time out banners when the user is inactive [Marina, Jasper]
+  - Misc fixes and cleanups [Jasper, Marina]
+* Fix showing "Next Week" on Sundays [Sebastian; #682198]
+* Delay restoring IM presence until the network comes up [Florian; #677982]
+* Display enterprise login hint [Ray; #681975]
+* Ignore unrecognized/irrelevant network devices/connections [Dan; #682364]
+* Misc bug fixes and cleanups: [Dan, Florian, Jasper, Jiro, Piotr, Rico;
+  #643687, #682045, #682189]
+
+Contributors:
+  Giovanni Campagna, Allan Day, Piotr Drąg, William Jon McCann,
+  Sebastian Keller, Jiro Matsuzawa, Florian Müllner, Alejandro Piñeiro,
+  Debarshi Ray, Ana Risteska, Jasper St. Pierre, Ray Strode, Owen Taylor,
+  Rico Tzschichholz, Joost Verdoorn, Dan Winship, Marina Zhurakhinskaya
+
+Translations:
+  Nilamdyuti Goswami [as], Daniel Mustieles [es], Yaron Shahrabani [he],
+  Chao-Hsiung Liao [zh_HK, zh_TW], Tobias Endrigkeit [de], A S Alam [pa],
+  Sandeep Sheshrao Shedmake [mr], Fran Diéguez [gl],
+  Мирослав Николић [sr, sr@latin]
+
+3.5.5
+=====
+* Update style to match mockups [Allan]
+  - improve calendar layout and legibility
+  - update notifications and menus
+  - use a common style for entries
+  - update scrollbars to match GTK+
+  - improve clock/unlock button in lock screen
+  - update polkit dialogs [Jasper]
+* Fix login dialog growing when selecting different users [Florian; #675076]
+* Implement screen lock in the shell [Giovanni]
+  - restructure login code to be shared with session unlock [#619955]
+  - add initial screen shield / unlock dialog implementation [#619955]
+  - implement (optional) notification list on lock shield [#619955]
+  - update login dialog style to match lock screen [#619955]
+  - filter notifications to only show new ones on the screen lock [#681143]
+  - make notifications scrollable if necessary [#681143]
+  - use correct application names in notifications [#681143]
+  - allow to return to the shield by pressing Escape [#681143]
+* Minor login dialog improvements [Florian]
+  - update style to match the overall visuals [#660913]
+  - indicate whether users are logged in [#658185]
+* Add support for background-repeat CSS property [Jasper; #680801]
+* Add :active pseudo class on scroll handles [Florian]
+* Remove markup from translated strings [Matthias; #681270]
+* Misc bug fixes and cleanups: [Alban, Florian, Giovanni, Jasper, Jeremy,
+  Matthias, Piotr; #677893, #679944, #680064, #680170, #680216, #680426,
+  #681101, #681382]
+
+Contributors:
+  Jeremy Bicha, Alban Browaeys, Giovanni Campagna, Matthias Clasen, Allan Day,
+  Piotr Drąg , Florian Müllner, Jasper St. Pierre
+
+Translations:
+  Matej Urbančič [sl], Tom Tryfonidis [el], Yaron Shahrabani [he],
+  Kjartan Maraas [nb], Baurzhan Muftakhidinov [kk], Praveen Illa [te],
+  Khaled Hosny [ar], Daniel Mustieles [es], Gabor Kelemen [hu],
+  Fran Diéguez [gl], Sweta Kothari [gu], Aleksej Kabanov [ru],
+  Nilamdyuti Goswami [as], Arash Mousavi [fa], Мирослав Николић [sr, sr@latin]
+
+3.5.4
+=====
+* Fix wrong result handling of remote calls [Florian; #678852]
+* dateMenu: Fix regression that caused no date to be displayed [Colin]
+* WindowTracker: Fix refcounting bug in get_app_for_window() [Giovanni; #678992]
+* Show the workspace switcher for move-to-workspace keybinding
+  [Giovanni, Jasper; #674104, #660839, #679005]
+* userMenu: Move "Power off" item to the bottom [Florian; #678887]
+* Remove contacts search provider [Florian, Rui; #677442]
+* network: don't ask for always-ask secrets when interaction isn't allowed
+  [Dan; #679091]
+* PolkitAgent: Look for the right password prompt [Matthias; #675300]
+* Implement extension updates [Jasper; #679099]
+* userMenu: Don't disconnect account signals when disabled [Guillaume; #669112]
+* Fix startup notification when opening calendar [Florian; #677907]
+* networkAgent: use absolute path if configured [Clemens; #679212]
+* recorder: Port to GStreamer-1.0 API [Florian; #679445]
+* telepathyClient: don't add log messages on presence changes [Ana; #669508]
+* lookingGlass: Don't use a signal callback on 'paint' to draw the border
+  [Jasper; #679464]
+* Add support for inhibiting automount [Hans; #678597]
+* Implemented banner support for the login screen [Matthias, Marius; #665346]
+* boxpointer: Flip side if we would end outside the monitor [Rui; #678164]
+* boxpointer: Change 'animate' parameter on show/hide to a bitmask
+  [Rui; #678337]
+* Add a grayscale effect [Matthias, Jasper, Florian: #676782, #674499]
+* UserMenu: show "Install Updates & Restart" when appropriate
+  [Giovanni; #677394, #680080]
+* messageTray: don't show the message tray when a new notification is shown
+  [Ana; #677210]
+* panel: don't break when indicator has no menu [Jean-Philippe; #678694]
+* appMenu: Disable app menu during startup animations [Florian; #672322]
+* autorun: Add a notification when unmounting drives [Cosimo; #676125]
+* st-icon: Fix potential crash involving shadows [Jasper; #679776]
+* Remove manual garbage collection on tweeners end [Cosimo; #679832]
+* dash: hide tooltips when overview begins hiding [Stefano; #674241]
+* Update modal dialog animation for new centered position [Florian; #674499]
+* calendar: Fix grid lines in RTL locales [Florian; #679879]
+* Integrate IBus with keyboard indicator [Rui; #641531]
+* Move ibus status icon under keyboard [Matthias]
+* gdm: port from libgdmgreeter to libgdm [Ray; #676401]
+* Misc bug fixes and cleanups [Antoine, Cosimo, Giovanni, Jasper, Rico;
+  #678978, #672790, #679847, #679944]
+
+Contributors:
+ Jean-Philippe Braun, Clemens Buchacher, Giovanni Campagna, Cosimo Cecchi,
+ Matthias Clasen, Hans de Goede, Guillaume Desmottes, Stefano Facchini,
+ Antoine Jacoutot, Rui Matos, Florian Müllner, Marius Rieder, Ana Risteska,
+ Jasper St. Pierre, Rico Tzschichholz, Colin Walters, Dan Williams
+
+Translations:
+ Matej Urbančič [sl], Khaled Hosny [ar], Nguyễn Thái Ngọc Duy [vi],
+ Nilamdyuti Goswami [as], Alexander Shopov [bg], Ivaylo Valkov [bg],
+ Daniel Mustieles [es], Kjartan Maraas [nb,nn], Yaron Shahrabani [he],
+ Nilamdyuti Goswami [as], Chao-Hsiung Liao [zh_HK, zh_TW], Ihar Hrachyshka [be],
+ Praveen Illa [te]
+
 3.5.3
 =====
 * calendar: Adapt to Evolution-Data-Server API changes [Matthew; #677402]

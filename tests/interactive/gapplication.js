@@ -1,4 +1,5 @@
 #!/usr/bin/env gjs
+// -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
 
 const Gdk = imports.gi.Gdk;
 const Gio = imports.gi.Gio;
@@ -24,10 +25,11 @@ function do_action_state_change(action) {
 
 function main() {
     Gtk.init(null, null);
+    Gdk.set_program_class('test-gjsgapp');
 
     let app = new Gtk.Application({ application_id: 'org.gnome.Shell.GtkApplicationTest' });
     app.connect('activate', function() {
-	print ("Activated");
+        print ("Activated");
     });
 
     let action = new Gio.SimpleAction({ name: 'one' });
@@ -87,15 +89,14 @@ function main() {
     item.set_action_and_target_value('app.parameter-int', GLib.Variant.new('u', 43));
     menu.append_item(item);
 
-    app.set_app_menu(menu);
-
     let window = null;
 
     app.connect_after('startup', function(app) {
-	window = new Gtk.ApplicationWindow({ title: "Test Application", application: app });
+        app.set_app_menu(menu);
+        window = new Gtk.ApplicationWindow({ title: "Test Application", application: app });
     });
     app.connect('activate', function(app) {
-	window.present();
+        window.present();
     });
 
     app.run(null);

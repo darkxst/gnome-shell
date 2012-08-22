@@ -6,6 +6,7 @@
 #include <gio/gio.h>
 #include <clutter/clutter.h>
 #include <libsoup/soup.h>
+#include <gdk-pixbuf/gdk-pixbuf.h>
 
 G_BEGIN_DECLS
 
@@ -32,22 +33,19 @@ gboolean shell_write_string_to_stream          (GOutputStream    *stream,
 char    *shell_get_file_contents_utf8_sync     (const char       *path,
                                                 GError          **error);
 
-gboolean shell_parse_search_provider           (const char       *data,
-                                                char            **name,
-                                                char            **url,
-                                                GList           **langs,
-                                                char            **icon_data_uri,
-                                                GError          **error);
-
-void shell_shader_effect_set_double_uniform (ClutterShaderEffect *effect,
-                                             const gchar         *name,
-                                             gdouble             value);
-
 gboolean shell_session_is_active_for_systemd (void);
 
 gboolean shell_util_wifexited                  (int               status,
                                                 int              *exit);
 
+GdkPixbuf *shell_util_create_pixbuf_from_data (const guchar      *data,
+                                               gsize              len,
+                                               GdkColorspace      colorspace,
+                                               gboolean           has_alpha,
+                                               int                bits_per_sample,
+                                               int                width,
+                                               int                height,
+                                               int                rowstride);
 
 G_END_DECLS
 

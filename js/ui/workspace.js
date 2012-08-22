@@ -301,7 +301,8 @@ const WindowClone = new Lang.Class({
 
         if (!this._zoomLightbox)
             this._zoomLightbox = new Lightbox.Lightbox(Main.uiGroup,
-                                                       { fadeTime: LIGHTBOX_FADE_TIME });
+                                                       { fadeInTime: LIGHTBOX_FADE_TIME,
+                                                         fadeOutTime: LIGHTBOX_FADE_TIME });
         this._zoomLightbox.show();
 
         this._zoomLocalOrig  = new ScaledPoint(this.actor.x, this.actor.y, this.actor.scale_x, this.actor.scale_y);
@@ -498,9 +499,9 @@ const WindowOverlay = new Lang.Class({
         this.title.opacity = 0;
         this._parentActor.raise_top();
         Tweener.addTween(this.title,
-                        { opacity: 255,
-                          time: CLOSE_BUTTON_FADE_TIME,
-                          transition: 'easeOutQuad' });
+                         { opacity: 255,
+                           time: CLOSE_BUTTON_FADE_TIME,
+                           transition: 'easeOutQuad' });
     },
 
     chromeWidth: function () {
@@ -509,7 +510,7 @@ const WindowOverlay = new Lang.Class({
 
     chromeHeights: function () {
         return [this.closeButton.height - this.closeButton._overlap,
-               this.title.height + this.title._spacing];
+                this.title.height + this.title._spacing];
     },
 
     /**
@@ -719,12 +720,15 @@ const Workspace = new Lang.Class({
                                                                Lang.bind(this, this._windowRemoved));
         }
         this._windowEnteredMonitorId = global.screen.connect('window-entered-monitor',
-                                                           Lang.bind(this, this._windowEnteredMonitor));
+                                                             Lang.bind(this, this._windowEnteredMonitor));
         this._windowLeftMonitorId = global.screen.connect('window-left-monitor',
-                                                           Lang.bind(this, this._windowLeftMonitor));
+                                                          Lang.bind(this, this._windowLeftMonitor));
         this._repositionWindowsId = 0;
 
         this.leavingOverview = false;
+
+        this._positionWindowsFlags = 0;
+        this._positionWindowsId = 0;
     },
 
     setGeometry: function(x, y, width, height) {
@@ -733,15 +737,13 @@ const Workspace = new Lang.Class({
         this._width = width;
         this._height = height;
 
-        // This is sometimes called during allocation, so we do this later
-        Meta.later_add(Meta.LaterType.BEFORE_REDRAW, Lang.bind(this,
-            function () {
-                this._dropRect.set_position(x, y);
-                this._dropRect.set_size(width, height);
-                this.positionWindows(WindowPositionFlags.ANIMATE);
-                return false;
-            }));
+        Meta.later_add(Meta.LaterType.BEFORE_REDRAW, Lang.bind(this, function() {
+            this._dropRect.set_position(x, y);
+            this._dropRect.set_size(width, height);
+            return false;
+        }));
 
+        this.positionWindows(WindowPositionFlags.ANIMATE);
     },
 
     _lookupIndex: function (metaWindow) {
@@ -1002,7 +1004,21 @@ const Workspace = new Lang.Class({
      *  INITIAL - this is the initial positioning of the windows.
      *  ANIMATE - Indicates that we need animate changing position.
      */
-    positionWindows : function(flags) {
+    positionWindows: function(flags) {
+        this._positionWindowsFlags |= flags;
+
+        if (this._positionWindowsId > 0)
+            return;
+
+        this._positionWindowsId = Meta.later_add(Meta.LaterType.BEFORE_REDRAW, Lang.bind(this, function() {
+            this._realPositionWindows(this._positionWindowsFlags);
+            this._positionWindowsFlags = 0;
+            this._positionWindowsId = 0;
+            return false;
+        }));
+    },
+
+    _realPositionWindows : function(flags) {
         if (this._repositionWindowsId > 0) {
             Mainloop.source_remove(this._repositionWindowsId);
             this._repositionWindowsId = 0;
@@ -1043,20 +1059,20 @@ const Workspace = new Lang.Class({
                     /* Hidden windows should fade in and grow
                      * therefore we need to resize them now so they
                      * can be scaled up later */
-                     if (initialPositioning) {
-                         clone.actor.opacity = 0;
-                         clone.actor.scale_x = 0;
-                         clone.actor.scale_y = 0;
-                         clone.actor.x = x;
-                         clone.actor.y = y;
-                     }
+                    if (initialPositioning) {
+                        clone.actor.opacity = 0;
+                        clone.actor.scale_x = 0;
+                        clone.actor.scale_y = 0;
+                        clone.actor.x = x;
+                        clone.actor.y = y;
+                    }
 
-                     // Make the window slightly transparent to indicate it's hidden
-                     Tweener.addTween(clone.actor,
-                                      { opacity: 255,
-                                        time: Overview.ANIMATION_TIME,
-                                        transition: 'easeInQuad'
-                                      });
+                    // Make the window slightly transparent to indicate it's hidden
+                    Tweener.addTween(clone.actor,
+                                     { opacity: 255,
+                                       time: Overview.ANIMATION_TIME,
+                                       transition: 'easeInQuad'
+                                     });
                 }
 
                 this._animateClone(clone, overlay, x, y, scale, initialPositioning);
@@ -1087,16 +1103,16 @@ const Workspace = new Lang.Class({
 
     _animateClone: function(clone, overlay, x, y, scale, initialPositioning) {
         Tweener.addTween(clone.actor,
-                                 { x: x,
-                                   y: y,
-                                   scale_x: scale,
-                                   scale_y: scale,
-                                   time: Overview.ANIMATION_TIME,
-                                   transition: 'easeOutQuad',
-                                   onComplete: Lang.bind(this, function() {
-                                         this._showWindowOverlay(clone, overlay, true);
-                                   })
-                                 });
+                         { x: x,
+                           y: y,
+                           scale_x: scale,
+                           scale_y: scale,
+                           time: Overview.ANIMATION_TIME,
+                           transition: 'easeOutQuad',
+                           onComplete: Lang.bind(this, function() {
+                               this._showWindowOverlay(clone, overlay, true);
+                           })
+                         });
 
         this._updateWindowOverlayPositions(clone, overlay, x, y, scale, true);
     },
@@ -1370,6 +1386,9 @@ const Workspace = new Lang.Class({
 
         if (this._repositionWindowsId > 0)
             Mainloop.source_remove(this._repositionWindowsId);
+
+        if (this._positionWindowsId > 0)
+            Meta.later_remove(this._positionWindowsId);
 
         // Usually, the windows will be destroyed automatically with
         // their parent (this.actor), but we might have a zoomed window

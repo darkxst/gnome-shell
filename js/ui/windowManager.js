@@ -15,65 +15,33 @@ const Tweener = imports.ui.tweener;
 
 const SHELL_KEYBINDINGS_SCHEMA = 'org.gnome.shell.keybindings';
 const WINDOW_ANIMATION_TIME = 0.25;
+const DIM_BRIGHTNESS = -0.3;
 const DIM_TIME = 0.500;
 const UNDIM_TIME = 0.250;
 
-var dimShader = undefined;
-
-function getDimShaderSource() {
-    if (!dimShader)
-        dimShader = Shell.get_file_contents_utf8_sync(global.datadir + '/shaders/dim-window.glsl');
-    return dimShader;
-}
-
-function getTopInvisibleBorder(metaWindow) {
-    let outerRect = metaWindow.get_outer_rect();
-    let inputRect = metaWindow.get_input_rect();
-    return outerRect.y - inputRect.y;
-}
 
 const WindowDimmer = new Lang.Class({
     Name: 'WindowDimmer',
 
     _init: function(actor) {
-        if (Clutter.feature_available(Clutter.FeatureFlags.SHADERS_GLSL)) {
-            this._effect = new Clutter.ShaderEffect({ shader_type: Clutter.ShaderType.FRAGMENT_SHADER });
-            this._effect.set_shader_source(getDimShaderSource());
-        } else {
-            this._effect = null;
-        }
-
+        this._brightnessEffect = new Clutter.BrightnessContrastEffect();
+        actor.add_effect(this._brightnessEffect);
         this.actor = actor;
+        this._dimFactor = 0.0;
     },
 
-    set dimFraction(fraction) {
-        this._dimFraction = fraction;
-
-        if (this._effect == null)
-            return;
-
-        if (!Meta.prefs_get_attach_modal_dialogs()) {
-            this._effect.enabled = false;
-            return;
-        }
-
-        if (fraction > 0.01) {
-            Shell.shader_effect_set_double_uniform(this._effect, 'height', this.actor.get_height());
-            Shell.shader_effect_set_double_uniform(this._effect, 'fraction', fraction);
-
-            if (!this._effect.actor)
-                this.actor.add_effect(this._effect);
-        } else {
-            if (this._effect.actor)
-                this.actor.remove_effect(this._effect);
-        }
+    setEnabled: function(enabled) {
+        this._brightnessEffect.enabled = enabled;
     },
 
-    get dimFraction() {
-        return this._dimFraction;
+    set dimFactor(factor) {
+        this._dimFactor = factor;
+        this._brightnessEffect.set_brightness(factor * DIM_BRIGHTNESS);
     },
 
-    _dimFraction: 0.0
+    get dimFactor() {
+        return this._dimFactor;
+    }
 });
 
 function getWindowDimmer(actor) {
@@ -151,11 +119,11 @@ const WindowManager = new Lang.Class({
 
         Main.overview.connect('showing', Lang.bind(this, function() {
             for (let i = 0; i < this._dimmedWindows.length; i++)
-                this._undimWindow(this._dimmedWindows[i], true);
+                this._undimWindow(this._dimmedWindows[i]);
         }));
         Main.overview.connect('hiding', Lang.bind(this, function() {
             for (let i = 0; i < this._dimmedWindows.length; i++)
-                this._dimWindow(this._dimmedWindows[i], true);
+                this._dimWindow(this._dimmedWindows[i]);
         }));
     },
 
@@ -167,12 +135,14 @@ const WindowManager = new Lang.Class({
         this._animationBlockCount = Math.max(0, this._animationBlockCount - 1);
     },
 
-    _shouldAnimate : function(actor) {
-        if (Main.overview.visible || this._animationBlockCount > 0)
+    _shouldAnimate: function() {
+        return !(Main.overview.visible || this._animationBlockCount > 0);
+    },
+
+    _shouldAnimateActor: function(actor) {
+        if (!this._shouldAnimate())
             return false;
-        if (actor && (actor.meta_window.get_window_type() != Meta.WindowType.NORMAL))
-            return false;
-        return true;
+        return actor.meta_window.get_window_type() == Meta.WindowType.NORMAL;
     },
 
     _removeEffect : function(list, actor) {
@@ -185,7 +155,7 @@ const WindowManager = new Lang.Class({
     },
 
     _minimizeWindow : function(shellwm, actor) {
-        if (!this._shouldAnimate(actor)) {
+        if (!this._shouldAnimateActor(actor)) {
             shellwm.completed_minimize(actor);
             return;
         }
@@ -269,43 +239,47 @@ const WindowManager = new Lang.Class({
             window._dimmed = true;
             this._dimmedWindows.push(window);
             if (!Main.overview.visible)
-                this._dimWindow(window, true);
+                this._dimWindow(window);
         } else if (!shouldDim && window._dimmed) {
             window._dimmed = false;
             this._dimmedWindows = this._dimmedWindows.filter(function(win) {
                                                                  return win != window;
                                                              });
             if (!Main.overview.visible)
-                this._undimWindow(window, true);
+                this._undimWindow(window);
         }
     },
 
-    _dimWindow: function(window, animate) {
+    _dimWindow: function(window) {
         let actor = window.get_compositor_private();
         if (!actor)
             return;
-        if (animate)
-            Tweener.addTween(getWindowDimmer(actor),
-                             { dimFraction: 1.0,
-                               time: DIM_TIME,
-                               transition: 'linear'
-                             });
-        else
-            getWindowDimmer(actor).dimFraction = 1.0;
+        let dimmer = getWindowDimmer(actor);
+        let enabled = Meta.prefs_get_attach_modal_dialogs();
+        dimmer.setEnabled(enabled);
+        if (!enabled)
+            return;
+        Tweener.addTween(dimmer,
+                         { dimFactor: 1.0,
+                           time: DIM_TIME,
+                           transition: 'linear'
+                         });
     },
 
-    _undimWindow: function(window, animate) {
+    _undimWindow: function(window) {
         let actor = window.get_compositor_private();
         if (!actor)
             return;
-        if (animate)
-            Tweener.addTween(getWindowDimmer(actor),
-                             { dimFraction: 0.0,
-                               time: UNDIM_TIME,
-                               transition: 'linear'
-                             });
-        else
-            getWindowDimmer(actor).dimFraction = 0.0;
+        let dimmer = getWindowDimmer(actor);
+        let enabled = Meta.prefs_get_attach_modal_dialogs();
+        dimmer.setEnabled(enabled);
+        if (!enabled)
+            return;
+        Tweener.addTween(dimmer,
+                         { dimFactor: 0.0,
+                           time: UNDIM_TIME,
+                           transition: 'linear'
+                         });
     },
 
     _mapWindow : function(shellwm, actor) {
@@ -327,6 +301,7 @@ const WindowManager = new Lang.Class({
             this._checkDimming(actor.get_meta_window().get_transient_for());
             if (this._shouldAnimate()) {
                 actor.set_scale(1.0, 0.0);
+                actor.scale_gravity = Clutter.Gravity.CENTER;
                 actor.show();
                 this._mapping.push(actor);
 
@@ -346,7 +321,7 @@ const WindowManager = new Lang.Class({
             shellwm.completed_map(actor);
             return;
         }
-        if (!this._shouldAnimate(actor)) {
+        if (!this._shouldAnimateActor(actor)) {
             shellwm.completed_map(actor);
             return;
         }
@@ -403,6 +378,7 @@ const WindowManager = new Lang.Class({
             }
 
             actor.set_scale(1.0, 1.0);
+            actor.scale_gravity = Clutter.Gravity.CENTER;
             actor.show();
             this._destroying.push(actor);
 
@@ -558,7 +534,7 @@ const WindowManager = new Lang.Class({
     _startAppSwitcher : function(display, screen, window, binding) {
         /* prevent a corner case where both popups show up at once */
         if (this._workspaceSwitcherPopup != null)
-            this._workspaceSwitcherPopup.actor.hide();
+            this._workspaceSwitcherPopup.destroy();
 
         let tabPopup = new AltTab.AltTabPopup();
 
@@ -582,20 +558,29 @@ const WindowManager = new Lang.Class({
         if (screen.n_workspaces == 1)
             return;
 
-        if (this._workspaceSwitcherPopup == null)
-            this._workspaceSwitcherPopup = new WorkspaceSwitcherPopup.WorkspaceSwitcherPopup();
-
         let [action,,,direction] = binding.get_name().split('-');
         let direction = Meta.MotionDirection[direction.toUpperCase()];
+        let newWs;
+
 
         if (direction != Meta.MotionDirection.UP &&
             direction != Meta.MotionDirection.DOWN)
             return;
 
         if (action == 'switch')
-            this.actionMoveWorkspace(direction);
+            newWs = this.actionMoveWorkspace(direction);
         else
-            this.actionMoveWindow(window, direction);
+            newWs = this.actionMoveWindow(window, direction);
+
+        if (!Main.overview.visible) {
+            if (this._workspaceSwitcherPopup == null) {
+                this._workspaceSwitcherPopup = new WorkspaceSwitcherPopup.WorkspaceSwitcherPopup();
+                this._workspaceSwitcherPopup.connect('destroy', Lang.bind(this, function() {
+                    this._workspaceSwitcherPopup = null;
+                }));
+            }
+            this._workspaceSwitcherPopup.display(direction, newWs.index());
+        }
     },
 
     actionMoveWorkspace: function(direction) {
@@ -604,8 +589,8 @@ const WindowManager = new Lang.Class({
 
         if (activeWorkspace != toActivate)
             toActivate.activate(global.get_current_time());
-        if (!Main.overview.visible)
-            this._workspaceSwitcherPopup.display(direction, toActivate.index());
+
+        return toActivate;
     },
 
     actionMoveWindow: function(window, direction) {
@@ -623,7 +608,6 @@ const WindowManager = new Lang.Class({
             toActivate.activate_with_focus (window, global.get_current_time());
         }
 
-        if (!Main.overview.visible)
-            this._workspaceSwitcherPopup.display(direction, toActivate.index());
+        return toActivate;
     },
 });

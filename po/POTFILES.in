@@ -4,6 +4,7 @@ data/org.gnome.shell.gschema.xml.in.in
 js/extensionPrefs/main.js
 js/gdm/loginDialog.js
 js/gdm/powerMenu.js
+js/gdm/util.js
 js/misc/util.js
 js/ui/appDisplay.js
 js/ui/appFavorites.js
@@ -27,6 +28,7 @@ js/ui/placeDisplay.js
 js/ui/polkitAuthenticationAgent.js
 js/ui/popupMenu.js
 js/ui/runDialog.js
+js/ui/screenShield.js
 js/ui/searchDisplay.js
 js/ui/shellEntry.js
 js/ui/shellMountOperation.js
@@ -37,6 +39,7 @@ js/ui/status/network.js
 js/ui/status/power.js
 js/ui/status/volume.js
 js/ui/telepathyClient.js
+js/ui/unlockDialog.js
 js/ui/userMenu.js
 js/ui/viewSelector.js
 js/ui/wanda.js

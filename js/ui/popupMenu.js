@@ -37,12 +37,13 @@ const PopupBaseMenuItem = new Lang.Class({
                                          activate: true,
                                          hover: true,
                                          sensitive: true,
-                                         style_class: null
+                                         style_class: null,
+                                         can_focus: true
                                        });
         this.actor = new Shell.GenericContainer({ style_class: 'popup-menu-item',
                                                   reactive: params.reactive,
                                                   track_hover: params.reactive,
-                                                  can_focus: params.reactive,
+                                                  can_focus: params.can_focus,
                                                   accessible_role: Atk.Role.MENU_ITEM});
         this.actor.connect('get-preferred-width', Lang.bind(this, this._getPreferredWidth));
         this.actor.connect('get-preferred-height', Lang.bind(this, this._getPreferredHeight));
@@ -69,10 +70,9 @@ const PopupBaseMenuItem = new Lang.Class({
         }
         if (params.reactive && params.hover)
             this.actor.connect('notify::hover', Lang.bind(this, this._onHoverChanged));
-        if (params.reactive) {
-            this.actor.connect('key-focus-in', Lang.bind(this, this._onKeyFocusIn));
-            this.actor.connect('key-focus-out', Lang.bind(this, this._onKeyFocusOut));
-        }
+
+        this.actor.connect('key-focus-in', Lang.bind(this, this._onKeyFocusIn));
+        this.actor.connect('key-focus-out', Lang.bind(this, this._onKeyFocusOut));
     },
 
     _onStyleChanged: function (actor) {
@@ -134,12 +134,7 @@ const PopupBaseMenuItem = new Lang.Class({
 
         this.sensitive = sensitive;
         this.actor.reactive = sensitive;
-        this.actor.can_focus = sensitive;
 
-        if (sensitive)
-            this.actor.remove_style_pseudo_class('insensitive');
-        else
-            this.actor.add_style_pseudo_class('insensitive');
         this.emit('sensitive-changed', sensitive);
     },
 
@@ -184,12 +179,14 @@ const PopupBaseMenuItem = new Lang.Class({
             this._dot = new St.DrawingArea({ style_class: 'popup-menu-item-dot' });
             this._dot.connect('repaint', Lang.bind(this, this._onRepaintDot));
             this.actor.add_actor(this._dot);
+            this.actor.add_accessible_state (Atk.StateType.CHECKED);
         } else {
             if (!this._dot)
                 return;
 
             this._dot.destroy();
             this._dot = null;
+            this.actor.remove_accessible_state (Atk.StateType.CHECKED);
         }
     },
 
@@ -400,7 +397,8 @@ const PopupSeparatorMenuItem = new Lang.Class({
     Extends: PopupBaseMenuItem,
 
     _init: function () {
-        this.parent({ reactive: false });
+        this.parent({ reactive: false,
+                      can_focus: false});
 
         this._drawingArea = new St.DrawingArea({ style_class: 'popup-separator-menu-item' });
         this.addActor(this._drawingArea, { span: -1, expand: true });
@@ -773,12 +771,10 @@ const PopupSwitchMenuItem = new Lang.Class({
             this._statusLabel.text = text;
             this._statusBin.child = this._statusLabel;
             this.actor.reactive = false;
-            this.actor.can_focus = false;
             this.actor.accessible_role = Atk.Role.MENU_ITEM;
         } else {
             this._statusBin.child = this._switch.actor;
             this.actor.reactive = true;
-            this.actor.can_focus = true;
             this.actor.accessible_role = Atk.Role.CHECK_MENU_ITEM;
         }
         this.checkAccessibleState();
@@ -869,12 +865,9 @@ const PopupMenuBase = new Lang.Class({
         // for the menu which causes its prelight state to freeze
         this.blockSourceEvents = false;
 
-        // Can be set while a menu is up to let all events through without special
-        // menu handling useful for scrollbars in menus, and probably not otherwise.
-        this.passEvents = false;
-
         this._activeMenuItem = null;
         this._childMenus = [];
+        this._settingsActions = { };
     },
 
     addAction: function(title, callback) {
@@ -902,7 +895,17 @@ const PopupMenuBase = new Lang.Class({
                            Main.overview.hide();
                            app.activate();
                        });
+
+        this._settingsActions[desktopFile] = menuItem;
+
         return menuItem;
+    },
+
+    setSettingsVisibility: function(visible) {
+        for (let id in this._settingsActions) {
+            let item = this._settingsActions[id];
+            item.actor.visible = visible;
+        }
     },
 
     isEmpty: function() {
@@ -1279,24 +1282,6 @@ const PopupSubMenu = new Lang.Class({
         this.actor = new St.ScrollView({ style_class: 'popup-sub-menu',
                                          hscrollbar_policy: Gtk.PolicyType.NEVER,
                                          vscrollbar_policy: Gtk.PolicyType.NEVER });
-
-        // StScrollbar plays dirty tricks with events, calling
-        // clutter_set_motion_events_enabled (FALSE) during the scroll; this
-        // confuses our event tracking, so we just turn it off during the
-        // scroll.
-        let vscroll = this.actor.get_vscroll_bar();
-        vscroll.connect('scroll-start',
-                        Lang.bind(this, function() {
-                                      let topMenu = this._getTopMenu();
-                                      if (topMenu)
-                                          topMenu.passEvents = true;
-                                  }));
-        vscroll.connect('scroll-stop',
-                        Lang.bind(this, function() {
-                                      let topMenu = this._getTopMenu();
-                                      if (topMenu)
-                                          topMenu.passEvents = false;
-                                  }));
 
         this.actor.add_actor(this.box);
         this.actor._delegate = this;
@@ -1891,11 +1876,7 @@ const RemoteMenu = new Lang.Class({
             }));
         }
 
-        item.actor.reactive = item.actor.can_focus = action.enabled;
-        if (action.enabled)
-            item.actor.remove_style_pseudo_class('insensitive');
-        else
-            item.actor.add_style_pseudo_class('insensitive');
+        item.actor.reactive = action.enabled;
 
         destroyId = item.connect('destroy', Lang.bind(this, function() {
             item.disconnect(destroyId);
@@ -2027,12 +2008,7 @@ const RemoteMenu = new Lang.Class({
         if (action.items.length) {
             for (let i = 0; i < action.items.length; i++) {
                 let item = action.items[i];
-                item.actor.reactive = item.actor.can_focus = action.enabled;
-
-                if (action.enabled)
-                    item.actor.remove_style_pseudo_class('insensitive');
-                else
-                    item.actor.add_style_pseudo_class('insensitive');
+                item.actor.reactive = action.enabled;
             }
         }
     }
@@ -2282,9 +2258,6 @@ const PopupMenuManager = new Lang.Class({
         if (this._owner.menuEventFilter &&
             this._owner.menuEventFilter(event))
             return true;
-
-        if (this._activeMenu != null && this._activeMenu.passEvents)
-            return false;
 
         if (this._didPop) {
             this._didPop = false;

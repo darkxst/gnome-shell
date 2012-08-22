@@ -132,7 +132,7 @@ const Client = new Lang.Class({
             let channel = channels[i];
             let [targetHandle, targetHandleType] = channel.get_handle();
 
-            if (Shell.is_channel_invalidated(channel))
+            if (channel.get_invalidated())
               continue;
 
             /* Only observe contact text channels */
@@ -184,7 +184,7 @@ const Client = new Lang.Class({
                 continue;
             }
 
-            if (Shell.is_channel_invalidated(channel))
+            if (channel.get_invalidated())
               continue;
 
             // 'notify' will be true when coming from an actual HandleChannels
@@ -211,13 +211,15 @@ const Client = new Lang.Class({
         // We can only approve the rooms if we have been invited to it
         let selfContact = channel.group_get_self_contact();
         if (selfContact == null) {
-            Shell.decline_dispatch_op(context, 'Not invited to the room');
+            context.fail(new Tp.Error({ code: Tp.Error.INVALID_ARGUMENT,
+                                        message: 'Not invited to the room' }));
             return;
         }
 
         let [invited, inviter, reason, msg] = channel.group_get_local_pending_contact_info(selfContact);
         if (!invited) {
-            Shell.decline_dispatch_op(context, 'Not invited to the room');
+            context.fail(new Tp.Error({ code: Tp.Error.INVALID_ARGUMENT,
+                                        message: 'Not invited to the room' }));
             return;
         }
 
@@ -237,8 +239,9 @@ const Client = new Lang.Class({
         let channel = channels[0];
         let chanType = channel.get_channel_type();
 
-        if (Shell.is_channel_invalidated(channel)) {
-            Shell.decline_dispatch_op(context, 'Channel is invalidated');
+        if (channel.get_invalidated()) {
+            context.fail(new Tp.Error({ code: Tp.Error.INVALID_ARGUMENT,
+                                        message: 'Channel is invalidated' }));
             return;
         }
 
@@ -249,7 +252,8 @@ const Client = new Lang.Class({
         else if (chanType == Tp.IFACE_CHANNEL_TYPE_FILE_TRANSFER)
             this._approveFileTransfer(account, conn, channel, dispatchOp, context);
         else
-            Shell.decline_dispatch_op(context, 'Unsupported channel type');
+            context.fail(new Tp.Error({ code: Tp.Error.INVALID_ARGUMENT,
+                                        message: 'Unsupported channel type' }));
     },
 
     _approveTextChannel: function(account, conn, channel, dispatchOp, context) {
@@ -482,9 +486,9 @@ const ChatSource = new Lang.Class({
         this._notification.appendAliasChange(oldAlias, newAlias);
     },
 
-    createNotificationIcon: function() {
+    createIcon: function(size) {
         this._iconBox = new St.Bin({ style_class: 'avatar-box' });
-        this._iconBox._size = this.ICON_SIZE;
+        this._iconBox._size = size;
         let textureCache = St.TextureCache.get_default();
         let file = this._contact.get_avatar_file();
 
@@ -532,8 +536,8 @@ const ChatSource = new Lang.Class({
     },
 
     _updateAvatarIcon: function() {
-        this._setSummaryIcon(this.createNotificationIcon());
-        this._notification.update(this._notification.title, null, { customContent: true, icon: this.createNotificationIcon() });
+        this.iconUpdated();
+        this._notification.update(this._notification.title, null, { customContent: true });
     },
 
     open: function(notification) {
@@ -578,7 +582,7 @@ const ChatSource = new Lang.Class({
             this._pendingMessages.push(message);
         }
 
-        this._updateCount();
+        this.countUpdated();
 
         let showTimestamp = false;
 
@@ -624,8 +628,17 @@ const ChatSource = new Lang.Class({
         this.destroy();
     },
 
-    _updateCount: function() {
-        this._setCount(this._pendingMessages.length, this._pendingMessages.length > 0);
+    /* All messages are new messages for Telepathy sources */
+    get count() {
+        return this._pendingMessages.length;
+    },
+
+    get unseenCount() {
+        return this.count;
+    },
+
+    get countVisible() {
+        return this.count > 0;
     },
 
     _messageReceived: function(channel, message) {
@@ -633,7 +646,7 @@ const ChatSource = new Lang.Class({
             return;
 
         this._pendingMessages.push(message);
-        this._updateCount();
+        this.countUpdated();
 
         message = makeMessageFromTpMessage(message, NotificationDirection.RECEIVED);
         this._notification.appendMessage(message);
@@ -710,7 +723,7 @@ const ChatSource = new Lang.Class({
 
         if (idx >= 0) {
             this._pendingMessages.splice(idx, 1);
-            this._updateCount();
+            this.countUpdated();
         }
         else
             throw new Error('Message not in our pending list: ' + message);
@@ -1031,9 +1044,9 @@ const ApproverSource = new Lang.Class({
         this.parent();
     },
 
-    createNotificationIcon: function() {
+    createIcon: function(size) {
         return new St.Icon({ gicon: this._gicon,
-                             icon_size: this.ICON_SIZE });
+                             icon_size: size });
     }
 });
 
@@ -1329,15 +1342,14 @@ const AccountNotification = new Lang.Class({
             case 'reconnect':
                 // If it fails again, a new notification should pop up with the
                 // new error.
-                account.reconnect_async(null, null);
+                account.reconnect_async(null);
                 break;
             case 'edit':
                 let cmd = '/usr/bin/empathy-accounts'
                         + ' --select-account=%s'
                         .format(account.get_path_suffix());
-                let app_info = Gio.app_info_create_from_commandline(cmd, null, 0,
-                    null);
-                app_info.launch([], null, null);
+                let app_info = Gio.app_info_create_from_commandline(cmd, null, 0);
+                app_info.launch([], global.create_app_launch_context());
                 break;
             }
             this.destroy();

@@ -13,8 +13,7 @@ const _ = Gettext.gettext;
 const Config = imports.misc.config;
 const ExtensionUtils = imports.misc.extensionUtils;
 
-
-const GnomeShellIface = <interface name="org.gnome.Shell">
+const GnomeShellIface = <interface name="org.gnome.Shell.Extensions">
 <signal name="ExtensionStatusChanged">
     <arg type="s" name="uuid"/>
     <arg type="i" name="state"/>
@@ -162,7 +161,7 @@ const Application = new Lang.Class({
         vbox.add(toolbar);
         let toolitem;
 
-        let label = new Gtk.Label({ label: _("<b>Extension</b>"),
+        let label = new Gtk.Label({ label: '<b>' + _("Extension") + '</b>',
                                     use_markup: true });
         toolitem = new Gtk.ToolItem({ child: label });
         toolbar.add(toolitem);
@@ -210,7 +209,7 @@ const Application = new Lang.Class({
     _extensionFound: function(signals, extension) {
         let iter = this._model.append();
         this._model.set(iter, [0, 1], [extension.uuid, extension.metadata.name]);
-        this._extensionIters[uuid] = iter;
+        this._extensionIters[extension.uuid] = iter;
     },
 
 

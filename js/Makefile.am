@@ -17,11 +17,11 @@ jsdir = $(pkgdatadir)/js
 
 nobase_dist_js_DATA = 	\
 	gdm/batch.js		\
-	gdm/consoleKit.js	\
 	gdm/fingerprint.js	\
 	gdm/loginDialog.js	\
 	gdm/powerMenu.js	\
-	gdm/systemd.js	 	\
+	gdm/realmd.js		\
+	gdm/util.js		\
 	extensionPrefs/main.js	\
 	misc/config.js		\
 	misc/extensionUtils.js	\
@@ -29,9 +29,9 @@ nobase_dist_js_DATA = 	\
 	misc/gnomeSession.js	\
 	misc/history.js		\
 	misc/jsParse.js		\
+	misc/loginManager.js	\
 	misc/modemManager.js	\
 	misc/params.js		\
-	misc/screenSaver.js     \
 	misc/util.js		\
 	perf/core.js		\
 	ui/altTab.js		\
@@ -51,12 +51,13 @@ nobase_dist_js_DATA = 	\
 	ui/extensionSystem.js	\
 	ui/extensionDownloader.js \
 	ui/flashspot.js		\
+	ui/ibusCandidatePopup.js\
+	ui/grabHelper.js	\
 	ui/iconGrid.js		\
 	ui/keyboard.js		\
 	ui/keyringPrompt.js	\
 	ui/layout.js		\
 	ui/lightbox.js		\
-	ui/link.js		\
 	ui/lookingGlass.js	\
 	ui/magnifier.js		\
 	ui/magnifierDBus.js	\
@@ -72,15 +73,16 @@ nobase_dist_js_DATA = 	\
 	ui/panel.js		\
 	ui/panelMenu.js		\
 	ui/placeDisplay.js	\
+	ui/pointerWatcher.js    \
 	ui/polkitAuthenticationAgent.js \
 	ui/popupMenu.js		\
 	ui/remoteSearch.js	\
 	ui/runDialog.js		\
+        ui/screenShield.js	\
 	ui/scripting.js		\
 	ui/search.js		\
 	ui/searchDisplay.js	\
 	ui/shellDBus.js		\
-	ui/statusIconDispatcher.js	\
 	ui/status/accessibility.js	\
 	ui/status/keyboard.js	\
 	ui/status/network.js	\
@@ -89,6 +91,7 @@ nobase_dist_js_DATA = 	\
 	ui/status/bluetooth.js	\
 	ui/telepathyClient.js	\
 	ui/tweener.js		\
+	ui/unlockDialog.js	\
 	ui/userMenu.js		\
 	ui/viewSelector.js	\
 	ui/wanda.js		\

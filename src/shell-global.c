@@ -1191,35 +1191,6 @@ shell_global_reexec_self (ShellGlobal *global)
   g_ptr_array_free (arr, TRUE);
 }
 
-/**
- * shell_global_gc:
- * @global: A #ShellGlobal
- *
- * Start a garbage collection process.  For more information, see
- * https://developer.mozilla.org/En/JS_GC
- */
-void
-shell_global_gc (ShellGlobal *global)
-{
-  JSContext *context = gjs_context_get_native_context (global->js_context);
-
-  JS_GC (context);
-}
-
-/**
- * shell_global_maybe_gc:
- * @global: A #ShellGlobal
- *
- * Start a garbage collection process when it would free up enough memory
- * to be worth the amount of time it would take
- * https://developer.mozilla.org/en/SpiderMonkey/JSAPI_Reference/JS_MaybeGC
- */
-void
-shell_global_maybe_gc (ShellGlobal *global)
-{
-  gjs_context_maybe_gc (global->js_context);
-}
-
 static void
 shell_global_on_gc (GjsContext   *context,
                     ShellGlobal  *global)
@@ -1510,13 +1481,6 @@ run_leisure_functions (gpointer data)
   /* We started more work since we scheduled the idle */
   if (global->work_count > 0)
     return FALSE;
-
-  /* Previously we called gjs_maybe_gc().  However, it simply doesn't
-   * trigger often enough.  Garbage collection is very fast here, so
-   * let's just aggressively GC.  This will help avoid both heap
-   * fragmentation, and the GC kicking in when we don't want it to.
-   */
-  gjs_context_gc (global->js_context);
 
   /* No leisure closures, so we are done */
   if (global->leisure_closures == NULL)

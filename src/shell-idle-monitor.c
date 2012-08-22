@@ -316,15 +316,21 @@ shell_idle_monitor_init (ShellIdleMonitor *monitor)
         monitor->priv->counter = None;
 }
 
+/**
+ * shell_idle_monitor_get:
+ *
+ * Returns: (transfer none): the global #ShellIdleMonitor.
+ */
 ShellIdleMonitor *
-shell_idle_monitor_new (void)
+shell_idle_monitor_get (void)
 {
-        GObject *idle_monitor;
+        static ShellIdleMonitor *idle_monitor;
 
-        idle_monitor = g_object_new (SHELL_TYPE_IDLE_MONITOR,
-                                     NULL);
+        if (G_UNLIKELY (idle_monitor == NULL))
+                idle_monitor = g_object_new (SHELL_TYPE_IDLE_MONITOR,
+                                             NULL);
 
-        return SHELL_IDLE_MONITOR (idle_monitor);
+        return idle_monitor;
 }
 
 static gboolean
@@ -409,4 +415,15 @@ shell_idle_monitor_remove_watch (ShellIdleMonitor *monitor,
 
         g_hash_table_remove (monitor->priv->watches,
                              GUINT_TO_POINTER (id));
+}
+
+gint64
+shell_idle_monitor_get_idletime (ShellIdleMonitor *monitor)
+{
+        XSyncValue value;
+
+        if (!XSyncQueryCounter (monitor->priv->display, monitor->priv->counter, &value))
+                return FALSE;
+
+        return _xsyncvalue_to_int64 (value);
 }

@@ -14,12 +14,18 @@ const Signals = imports.signals;
 const St = imports.gi.St;
 
 const BoxPointer = imports.ui.boxpointer;
+const CtrlAltTab = imports.ui.ctrlAltTab;
 const GnomeSession = imports.misc.gnomeSession;
+const GrabHelper = imports.ui.grabHelper;
+const Lightbox = imports.ui.lightbox;
 const Main = imports.ui.main;
+const PointerWatcher = imports.ui.pointerWatcher;
 const PopupMenu = imports.ui.popupMenu;
 const Params = imports.misc.params;
 const Tweener = imports.ui.tweener;
 const Util = imports.misc.util;
+
+const SHELL_KEYBINDINGS_SCHEMA = 'org.gnome.shell.keybindings';
 
 const ANIMATION_TIME = 0.2;
 const NOTIFICATION_TIMEOUT = 4;
@@ -29,11 +35,18 @@ const LONGER_SUMMARY_TIMEOUT = 4;
 const HIDE_TIMEOUT = 0.2;
 const LONGER_HIDE_TIMEOUT = 0.6;
 
-const MAX_SOURCE_TITLE_WIDTH = 180;
+const NOTIFICATION_ICON_SIZE = 24;
 
 // We delay hiding of the tray if the mouse is within MOUSE_LEFT_ACTOR_THRESHOLD
 // range from the point where it left the tray.
 const MOUSE_LEFT_ACTOR_THRESHOLD = 20;
+
+// Time the user needs to leave the mouse on the bottom pixel row to open the tray
+const TRAY_DWELL_TIME = 1000; // ms
+// Time resolution when tracking the mouse to catch the open tray dwell
+const TRAY_DWELL_CHECK_INTERVAL = 100; // ms
+
+const IDLE_TIME = 1000;
 
 const State = {
     HIDDEN:  0,
@@ -212,146 +225,31 @@ const URLHighlighter = new Lang.Class({
     }
 });
 
-const FocusGrabber = new Lang.Class({
-    Name: 'FocusGrabber',
+function makeCloseButton() {
+    let closeButton = new St.Button({ style_class: 'notification-close'});
 
-    _init: function() {
-        this.actor = null;
+    // This is a bit tricky. St.Bin has its own x-align/y-align properties
+    // that compete with Clutter's properties. This should be fixed for
+    // Clutter 2.0. Since St.Bin doesn't define its own setters, the
+    // setters are a workaround to get Clutter's version.
+    closeButton.set_x_align(Clutter.ActorAlign.END);
+    closeButton.set_y_align(Clutter.ActorAlign.START);
 
-        this._hasFocus = false;
-        // We use this._prevFocusedWindow and this._prevKeyFocusActor to return the
-        // focus where it previously belonged after a focus grab, unless the user
-        // has explicitly changed that.
-        this._prevFocusedWindow = null;
-        this._prevKeyFocusActor = null;
+    // XXX Clutter 2.0 workaround: ClutterBinLayout needs expand
+    // to respect the alignments.
+    closeButton.set_x_expand(true);
+    closeButton.set_y_expand(true);
 
-        this._focusActorChangedId = 0;
-        this._stageInputModeChangedId = 0;
-        this._capturedEventId = 0;
-        this._togglingFocusGrabMode = false;
+    closeButton.connect('style-changed', function() {
+        let themeNode = closeButton.get_theme_node();
+        closeButton.translation_x = themeNode.get_length('-shell-close-overlap-x');
 
-        Main.overview.connect('showing', Lang.bind(this,
-            function() {
-                this._toggleFocusGrabMode();
-            }));
-        Main.overview.connect('hidden', Lang.bind(this,
-            function() {
-                this._toggleFocusGrabMode();
-            }));
-    },
+        // libcroco doesn't support negative units
+        closeButton.translation_y = -themeNode.get_length('-shell-close-overlap-y');
+    });
 
-    grabFocus: function(actor) {
-        if (this._hasFocus)
-            return;
-
-        this.actor = actor;
-
-        this._prevFocusedWindow = global.display.focus_window;
-        this._prevKeyFocusActor = global.stage.get_key_focus();
-
-        if (global.stage_input_mode == Shell.StageInputMode.NONREACTIVE ||
-            global.stage_input_mode == Shell.StageInputMode.NORMAL)
-            global.set_stage_input_mode(Shell.StageInputMode.FOCUSED);
-
-        // Use captured-event to notice clicks outside the focused actor
-        // without consuming them.
-        this._capturedEventId = global.stage.connect('captured-event', Lang.bind(this, this._onCapturedEvent));
-
-        this._stageInputModeChangedId = global.connect('notify::stage-input-mode', Lang.bind(this, this._stageInputModeChanged));
-        this._focusActorChangedId = global.stage.connect('notify::key-focus', Lang.bind(this, this._focusActorChanged));
-
-        this._hasFocus = true;
-
-        if (!this.actor.navigate_focus(null, Gtk.DirectionType.TAB_FORWARD, false))
-            this.actor.grab_key_focus();
-
-        this.emit('focus-grabbed');
-    },
-
-    _focusActorChanged: function() {
-        let focusedActor = global.stage.get_key_focus();
-        if (!focusedActor || !this.actor.contains(focusedActor)) {
-            this._prevKeyFocusActor = null;
-            this.ungrabFocus();
-        }
-    },
-
-    _stageInputModeChanged: function() {
-        this.ungrabFocus();
-    },
-
-    _onCapturedEvent: function(actor, event) {
-        let source = event.get_source();
-        switch (event.type()) {
-            case Clutter.EventType.BUTTON_PRESS:
-                if (!this.actor.contains(source) &&
-                    !Main.layoutManager.keyboardBox.contains(source))
-                    this.emit('button-pressed', source);
-                break;
-            case Clutter.EventType.KEY_PRESS:
-                let symbol = event.get_key_symbol();
-                if (symbol == Clutter.Escape) {
-                    this.emit('escape-pressed');
-                    return true;
-                }
-                break;
-        }
-
-        return false;
-    },
-
-    ungrabFocus: function() {
-        if (!this._hasFocus)
-            return;
-
-        if (this._focusActorChangedId > 0) {
-            global.stage.disconnect(this._focusActorChangedId);
-            this._focusActorChangedId = 0;
-        }
-
-        if (this._stageInputModeChangedId) {
-            global.disconnect(this._stageInputModeChangedId);
-            this._stageInputModeChangedId = 0;
-        }
-
-        if (this._capturedEventId > 0) {
-            global.stage.disconnect(this._capturedEventId);
-            this._capturedEventId = 0;
-        }
-
-        this._hasFocus = false;
-        this.emit('focus-ungrabbed');
-
-        if (this._prevFocusedWindow && !global.display.focus_window) {
-            global.display.set_input_focus_window(this._prevFocusedWindow, false, global.get_current_time());
-            this._prevFocusedWindow = null;
-        }
-        if (this._prevKeyFocusActor) {
-            global.stage.set_key_focus(this._prevKeyFocusActor);
-            this._prevKeyFocusActor = null;
-        } else {
-            // We don't want to keep any actor inside the previously focused actor focused.
-            let focusedActor = global.stage.get_key_focus();
-            if (focusedActor && this.actor.contains(focusedActor))
-                global.stage.set_key_focus(null);
-        }
-        if (!this._togglingFocusGrabMode)
-            this.actor = null;
-    },
-
-    // Because we grab focus differently in the overview
-    // and in the main view, we need to change how it is
-    // done when we move between the two.
-    _toggleFocusGrabMode: function() {
-        if (this._hasFocus) {
-            this._togglingFocusGrabMode = true;
-            this.ungrabFocus();
-            this.grabFocus(this.actor);
-            this._togglingFocusGrabMode = false;
-        }
-    }
-});
-Signals.addSignalMethods(FocusGrabber.prototype);
+    return closeButton;
+}
 
 // Notification:
 // @source: the notification's Source
@@ -394,7 +292,7 @@ Signals.addSignalMethods(FocusGrabber.prototype);
 // the content area (as with addBody()).
 //
 // By default, the icon shown is created by calling
-// source.createNotificationIcon(). However, if @params contains an 'icon'
+// source.createIcon(). However, if @params contains an 'icon'
 // parameter, the passed in icon will be used.
 //
 // If @params contains a 'titleMarkup', 'bannerMarkup', or
@@ -420,6 +318,8 @@ const Notification = new Lang.Class({
         // 'transient' is a reserved keyword in JS, so we have to use an alternate variable name
         this.isTransient = false;
         this.expanded = false;
+        this.showWhenLocked = false;
+        this.acknowledged = false;
         this._destroyed = false;
         this._useActionIcons = false;
         this._customContent = false;
@@ -445,8 +345,6 @@ const Notification = new Lang.Class({
                                      reactive: true });
         this._table.connect('style-changed', Lang.bind(this, this._styleChanged));
         this.actor.set_child(this._table);
-
-        this._buttonFocusManager = St.FocusManager.get_for_stage(global.stage);
 
         // The first line should have the title, followed by the
         // banner text, but ellipsized if they won't both fit. We can't
@@ -539,7 +437,7 @@ const Notification = new Lang.Class({
             this._table.remove_style_class_name('multi-line-notification');
 
         if (!this._icon) {
-            this._icon = params.icon || this.source.createNotificationIcon();
+            this._icon = params.icon || this.source.createIcon(NOTIFICATION_ICON_SIZE);
             this._table.add(this._icon, { row: 0,
                                           col: 0,
                                           x_expand: false,
@@ -770,10 +668,10 @@ const Notification = new Lang.Class({
         }
 
         if (this._buttonBox.get_n_children() > 0)
-            this._buttonFocusManager.remove_group(this._buttonBox);
+            global.focus_manager.remove_group(this._buttonBox);
 
         this._buttonBox.add(button);
-        this._buttonFocusManager.add_group(this._buttonBox);
+        global.focus_manager.add_group(this._buttonBox);
         button.connect('clicked', Lang.bind(this, this._onActionInvoked, id));
 
         this.updated();
@@ -798,10 +696,6 @@ const Notification = new Lang.Class({
             return;
 
         button.reactive = sensitive;
-        if (sensitive)
-            button.remove_style_pseudo_class('insensitive');
-        else
-            button.add_style_pseudo_class('insensitive');
     },
 
     setUrgency: function(urgency) {
@@ -814,6 +708,14 @@ const Notification = new Lang.Class({
 
     setTransient: function(isTransient) {
         this.isTransient = isTransient;
+    },
+
+    setShowWhenLocked: function(show) {
+        if (show && !this.isTransient) {
+            throw new Error('ShowWhenLocked can only be set on a transient notification');
+        }
+
+        this.showWhenLocked = show;
     },
 
     setUseActionIcons: function(useIcons) {
@@ -1029,24 +931,20 @@ const Notification = new Lang.Class({
 });
 Signals.addSignalMethods(Notification.prototype);
 
-const Source = new Lang.Class({
-    Name: 'MessageTraySource',
+const SourceActor = new Lang.Class({
+    Name: 'SourceActor',
 
-    ICON_SIZE: 24,
-
-    _init: function(title, iconName, iconType) {
-        this.title = title;
-        this.iconName = iconName;
-        this.iconType = iconType;
+    _init: function(source, size) {
+        this._source = source;
+        this._size = size;
 
         this.actor = new Shell.GenericContainer();
         this.actor.connect('get-preferred-width', Lang.bind(this, this._getPreferredWidth));
         this.actor.connect('get-preferred-height', Lang.bind(this, this._getPreferredHeight));
         this.actor.connect('allocate', Lang.bind(this, this._allocate));
-        this.actor.connect('destroy', Lang.bind(this,
-            function() {
-                this._actorDestroyed = true;
-            }));
+        this.actor.connect('destroy', Lang.bind(this, function() {
+            this._actorDestroyed = true;
+        }));
         this._actorDestroyed = false;
 
         this._counterLabel = new St.Label();
@@ -1054,21 +952,24 @@ const Source = new Lang.Class({
                                         child: this._counterLabel });
         this._counterBin.hide();
 
-        this._iconBin = new St.Bin({ width: this.ICON_SIZE,
-                                     height: this.ICON_SIZE,
+        this._iconBin = new St.Bin({ width: size,
+                                     height: size,
                                      x_fill: true,
                                      y_fill: true });
 
         this.actor.add_actor(this._iconBin);
         this.actor.add_actor(this._counterBin);
 
-        this.isTransient = false;
-        this.isChat = false;
-        this.isMuted = false;
+        this._source.connect('count-updated', Lang.bind(this, this._updateCount));
+        this._updateCount();
 
-        this.notifications = [];
+        this._source.connect('icon-updated', Lang.bind(this, this._updateIcon));
+        this._updateIcon();
+    },
 
-        this._setSummaryIcon(this.createNotificationIcon());
+    setIcon: function(icon) {
+        this._iconBin.child = icon;
+        this._iconSet = true;
     },
 
     _getPreferredWidth: function (actor, forHeight, alloc) {
@@ -1106,20 +1007,54 @@ const Source = new Lang.Class({
         this._counterBin.allocate(childBox, flags);
     },
 
-    _setCount: function(count, visible) {
-        if (isNaN(parseInt(count)))
-            throw new Error("Invalid notification count: " + count);
-
+    _updateIcon: function() {
         if (this._actorDestroyed)
             return;
 
-        this._counterBin.visible = visible;
-        this._counterLabel.set_text(count.toString());
+        if (!this._iconSet)
+            this._iconBin.child = this._source.createIcon(this._size);
     },
 
     _updateCount: function() {
-        let count = this.notifications.length;
-        this._setCount(count, count > 1);
+        if (this._actorDestroyed)
+            return;
+
+        this._counterBin.visible = this._source.countVisible;
+        this._counterLabel.set_text(this._source.count.toString());
+    }
+});
+
+const Source = new Lang.Class({
+    Name: 'MessageTraySource',
+
+    SOURCE_ICON_SIZE: 48,
+
+    _init: function(title, iconName, iconType) {
+        this.title = title;
+        this.iconName = iconName;
+        this.iconType = iconType;
+
+        this.isTransient = false;
+        this.isChat = false;
+        this.isMuted = false;
+
+        this.notifications = [];
+    },
+
+    get count() {
+        return this.notifications.length;
+    },
+
+    get unseenCount() {
+        return this.notifications.filter(function(n) { return !n.acknowledged; }).length;
+    },
+
+    get countVisible() {
+        return this.count > 1;
+    },
+
+    countUpdated: function() {
+        this.emit('count-updated');
     },
 
     setTransient: function(isTransient) {
@@ -1138,19 +1073,27 @@ const Source = new Lang.Class({
         this.emit('muted-changed');
     },
 
-    // Called to create a new icon actor (of size this.ICON_SIZE).
+    // Called to create a new icon actor.
     // Provides a sane default implementation, override if you need
     // something more fancy.
-    createNotificationIcon: function() {
+    createIcon: function(size) {
         return new St.Icon({ icon_name: this.iconName,
                              icon_type: this.iconType,
-                             icon_size: this.ICON_SIZE });
+                             icon_size: size });
     },
 
-    // Unlike createNotificationIcon, this always returns the same actor;
+    _ensureMainIcon: function() {
+        if (this._mainIcon)
+            return;
+
+        this._mainIcon = new SourceActor(this, this.SOURCE_ICON_SIZE);
+    },
+
+    // Unlike createIcon, this always returns the same actor;
     // there is only one summary icon actor for a Source.
     getSummaryIcon: function() {
-        return this.actor;
+        this._ensureMainIcon();
+        return this._mainIcon.actor;
     },
 
     pushNotification: function(notification) {
@@ -1170,13 +1113,14 @@ const Source = new Lang.Class({
                 if (this.notifications.length == 0)
                     this._lastNotificationRemoved();
 
-                this._updateCount();
+                this.countUpdated();
             }));
 
-        this._updateCount();
+        this.countUpdated();
     },
 
     notify: function(notification) {
+        notification.acknowledged = false;
         this.pushNotification(notification);
         if (!this.isMuted)
              this.emit('notify', notification);
@@ -1194,11 +1138,15 @@ const Source = new Lang.Class({
         return false;
     },
 
+    iconUpdated: function() {
+        this.emit('icon-updated');
+    },
+
     //// Protected methods ////
     _setSummaryIcon: function(icon) {
-        if (this._iconBin.child)
-            this._iconBin.child.destroy();
-        this._iconBin.child = icon;
+        this._ensureMainIcon();
+        this._mainIcon.setIcon(icon);
+        this.iconUpdated();
     },
 
     open: function(notification) {
@@ -1210,12 +1158,16 @@ const Source = new Lang.Class({
             if (!this.notifications[i].resident)
                 this.notifications[i].destroy();
 
-        this._updateCount();
+        this.countUpdated();
     },
 
     // Default implementation is to destroy this source, but subclasses can override
     _lastNotificationRemoved: function() {
         this.destroy();
+    },
+
+    hasResidentNotification: function() {
+        return this.notifications.some(function(n) { return n.resident; });
     }
 });
 Signals.addSignalMethods(Source.prototype);
@@ -1231,36 +1183,32 @@ const SummaryItem = new Lang.Class({
                                      y_fill: true,
                                      reactive: true,
                                      button_mask: St.ButtonMask.ONE | St.ButtonMask.TWO | St.ButtonMask.THREE,
+                                     can_focus: true,
                                      track_hover: true });
 
         this._sourceBox = new St.BoxLayout({ style_class: 'summary-source' });
 
         this._sourceIcon = source.getSummaryIcon();
-        this._sourceTitleBin = new St.Bin({ y_align: St.Align.MIDDLE,
-                                            x_fill: true,
-                                            clip_to_allocation: true });
-        this._sourceTitle = new St.Label({ style_class: 'source-title',
-                                           text: source.title });
-        this._sourceTitle.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
-        this._sourceTitleBin.child = this._sourceTitle;
-        this._sourceTitleBin.width = 0;
-
-        this.source.connect('title-changed',
-                            Lang.bind(this, function() {
-                                this._sourceTitle.text = source.title;
-                            }));
-
         this._sourceBox.add(this._sourceIcon, { y_fill: false });
-        this._sourceBox.add(this._sourceTitleBin, { expand: true, y_fill: false });
         this.actor.child = this._sourceBox;
 
-        this.notificationStackView = new St.ScrollView({ name: source.isChat ? '' : 'summary-notification-stack-scrollview',
+        this.notificationStackWidget = new St.Widget({ layout_manager: new Clutter.BinLayout() });
+
+        this._closeButton = makeCloseButton();
+        this._closeButton.connect('clicked', Lang.bind(this, function() {
+            source.destroy();
+            this.emit('done-displaying-content');
+        }));
+
+        this.notificationStackWidget.add_actor(this._closeButton);
+        this.notificationStackView = new St.ScrollView({ style_class: source.isChat ? '' : 'summary-notification-stack-scrollview',
                                                          vscrollbar_policy: source.isChat ? Gtk.PolicyType.NEVER : Gtk.PolicyType.AUTOMATIC,
-                                                         hscrollbar_policy: Gtk.PolicyType.NEVER,
-                                                         style_class: 'vfade' });
-        this.notificationStack = new St.BoxLayout({ name: 'summary-notification-stack',
-                                                     vertical: true });
+                                                         hscrollbar_policy: Gtk.PolicyType.NEVER });
+        this.notificationStackView.add_style_class_name('vfade');
+        this.notificationStack = new St.BoxLayout({ style_class: 'summary-notification-stack',
+                                                    vertical: true });
         this.notificationStackView.add_actor(this.notificationStack);
+        this.notificationStackWidget.add_actor(this.notificationStackView);
         this._stackedNotifications = [];
 
         this._oldMaxScrollAdjustment = 0;
@@ -1303,32 +1251,7 @@ const SummaryItem = new Lang.Class({
             this.rightClickMenu.add(item.actor);
 	}
 
-        let focusManager = St.FocusManager.get_for_stage(global.stage);
-        focusManager.add_group(this.rightClickMenu);
-    },
-
-    // getTitleNaturalWidth, getTitleWidth, and setTitleWidth include
-    // the spacing between the icon and title (which is actually
-    // _sourceTitle's padding-left) as part of the width.
-
-    getTitleNaturalWidth: function() {
-        let [minWidth, naturalWidth] = this._sourceTitle.get_preferred_width(-1);
-
-        return Math.min(naturalWidth, MAX_SOURCE_TITLE_WIDTH);
-    },
-
-    getTitleWidth: function() {
-        return this._sourceTitleBin.width;
-    },
-
-    setTitleWidth: function(width) {
-        width = Math.round(width);
-        if (width != this._sourceTitleBin.width)
-            this._sourceTitleBin.width = width;
-    },
-
-    setEllipsization: function(mode) {
-        this._sourceTitle.clutter_text.ellipsize = mode;
+        global.focus_manager.add_group(this.rightClickMenu);
     },
 
     prepareNotificationStackForShowing: function() {
@@ -1338,6 +1261,9 @@ const SummaryItem = new Lang.Class({
         for (let i = 0; i < this.source.notifications.length; i++) {
             this._appendNotificationToStack(this.source.notifications[i]);
         }
+
+        this.notificationStackWidget.width = this.notificationStackView.width;
+        this.scrollTo(St.Side.BOTTOM);
     },
 
     doneShowingNotificationStack: function() {
@@ -1404,6 +1330,8 @@ const SummaryItem = new Lang.Class({
                 notification.disconnect(stackedNotification.notificationDoneDisplayingId);
                 notification.disconnect(stackedNotification.notificationDestroyedId);
                 this._stackedNotifications.splice(i, 1);
+                if (notification.actor.get_parent() == this.notificationStack)
+                    this.notificationStack.remove_actor(notification.actor);
                 this._contentUpdated();
                 break;
             }
@@ -1431,20 +1359,32 @@ const MessageTray = new Lang.Class({
         this.actor = new St.Widget({ name: 'message-tray',
                                      reactive: true,
                                      track_hover: true });
+        this.actor.connect('style-changed', Lang.bind(this, this._onStyleChanged));
         this.actor.connect('notify::hover', Lang.bind(this, this._onTrayHoverChanged));
 
+        this._notificationWidget = new St.Widget({ name: 'notification-container',
+                                                   layout_manager: new Clutter.BinLayout() });
+        this.actor.add_actor(this._notificationWidget);
+
         this._notificationBin = new St.Bin();
-        this.actor.add_actor(this._notificationBin);
-        this._notificationBin.hide();
+        this._notificationWidget.add_actor(this._notificationBin);
+        this._notificationWidget.hide();
         this._notificationQueue = [];
         this._notification = null;
         this._notificationClickedId = 0;
 
-        this._summaryBin = new St.Bin({ x_align: St.Align.END });
+        this._summaryBin = new St.Bin({ x_align: St.Align.END,
+                                        reactive: true });
+        this._summaryBin.connect('button-release-event', Lang.bind(this, function(actor, event) {
+            this._setClickedSummaryItem(null);
+            this._updateState();
+            actor.grab_key_focus();
+        }));
         this.actor.add_actor(this._summaryBin);
         this._summary = new St.BoxLayout({ name: 'summary-mode',
                                            reactive: true,
                                            track_hover: true });
+        global.focus_manager.add_group(this._summary);
         this._summary.connect('notify::hover', Lang.bind(this, this._onSummaryHoverChanged));
         this._summaryBin.child = this._summary;
         this._summaryBin.opacity = 0;
@@ -1457,7 +1397,7 @@ const MessageTray = new Lang.Class({
                                                               track_hover: true });
         this._summaryBoxPointer.actor.style_class = 'summary-boxpointer';
         this._summaryBoxPointer.actor.hide();
-        Main.layoutManager.addChrome(this._summaryBoxPointer.actor, { visibleInFullscreen: true });
+        Main.layoutManager.addChrome(this._summaryBoxPointer.actor);
 
         this._summaryBoxPointerItem = null;
         this._summaryBoxPointerContentUpdatedId = 0;
@@ -1465,36 +1405,21 @@ const MessageTray = new Lang.Class({
         this._clickedSummaryItem = null;
         this._clickedSummaryItemMouseButton = -1;
         this._clickedSummaryItemAllocationChangedId = 0;
-        this._expandedSummaryItem = null;
-        this._summaryItemTitleWidth = 0;
         this._pointerBarrier = 0;
 
-        this._unseenNotifications = [];
+        this._closeButton = makeCloseButton();
+        this._closeButton.hide();
+        this._closeButton.connect('clicked', Lang.bind(this, this._onCloseClicked));
+        this._notificationWidget.add_actor(this._closeButton);
+
         this._idleMonitorWatchId = 0;
-        this._backFromAway = false;
+        this._userActiveWhileNotificationShown = false;
 
-        this.idleMonitor = new Shell.IdleMonitor();
+        this.idleMonitor = Shell.IdleMonitor.get();
 
-        // To simplify the summary item animation code, we pretend
-        // that there's an invisible SummaryItem to the left of the
-        // leftmost real summary item, and that it's expanded when all
-        // of the other items are collapsed.
-        this._imaginarySummaryItemTitleWidth = 0;
-
-        this._focusGrabber = new FocusGrabber();
-        this._focusGrabber.connect('focus-grabbed', Lang.bind(this,
-            function() {
-                if (this._summaryBoxPointer.bin.child)
-                    this._lock();
-            }));
-        this._focusGrabber.connect('focus-ungrabbed', Lang.bind(this, this._unlock));
-        this._focusGrabber.connect('button-pressed', Lang.bind(this,
-           function(focusGrabber, source) {
-               if (this._clickedSummaryItem && !this._clickedSummaryItem.actor.contains(source))
-                   this._unsetClickedSummaryItem();
-               this._focusGrabber.ungrabFocus();
-           }));
-        this._focusGrabber.connect('escape-pressed', Lang.bind(this, this._escapeTray));
+        this._grabHelper = new GrabHelper.GrabHelper(this.actor);
+        this._grabHelper.addActor(this._summaryBoxPointer.actor);
+        this._grabHelper.addActor(this.actor);
 
         Main.layoutManager.keyboardBox.connect('notify::hover', Lang.bind(this, this._onKeyboardHoverChanged));
 
@@ -1506,7 +1431,6 @@ const MessageTray = new Lang.Class({
         this._pointerInTray = false;
         this._pointerInKeyboard = false;
         this._summaryState = State.HIDDEN;
-        this._summaryTimeoutId = 0;
         this._pointerInSummary = false;
         this._notificationState = State.HIDDEN;
         this._notificationTimeoutId = 0;
@@ -1517,74 +1441,101 @@ const MessageTray = new Lang.Class({
         this._notificationRemoved = false;
         this._reNotifyAfterHideNotification = null;
         this._inFullscreen = false;
+        this._desktopClone = null;
 
-        this._corner = new Clutter.Rectangle({ width: 1,
-                                               height: 1,
-                                               opacity: 0,
-                                               reactive: true });
-        this._corner.connect('enter-event', Lang.bind(this, this._onCornerEnter));
-        Main.layoutManager.trayBox.add_actor(this._corner);
-        Main.layoutManager.trackChrome(this._corner);
+        this._lightbox = new Lightbox.Lightbox(global.window_group,
+                                               { inhibitEvents: true,
+                                                 fadeInTime: ANIMATION_TIME,
+                                                 fadeOutTime: ANIMATION_TIME,
+                                                 fadeFactor: 0.2
+                                               });
 
         Main.layoutManager.trayBox.add_actor(this.actor);
         this.actor.y = 0;
         Main.layoutManager.trackChrome(this.actor);
-        Main.layoutManager.trackChrome(this._notificationBin);
+        Main.layoutManager.trackChrome(this._notificationWidget);
+        Main.layoutManager.trackChrome(this._closeButton);
 
-        Main.layoutManager.connect('monitors-changed', Lang.bind(this, this._setSizePosition));
+        Main.layoutManager.connect('monitors-changed', Lang.bind(this, function() {
+            this.actor.style_changed();
+        }));
         Main.layoutManager.connect('primary-fullscreen-changed', Lang.bind(this, this._onFullscreenChanged));
-
-        this._setSizePosition();
 
         Main.overview.connect('showing', Lang.bind(this,
             function() {
                 this._overviewVisible = true;
-                if (this._locked) {
-                    this._unsetClickedSummaryItem();
-                    this._unlock();
-                } else {
-                    this._updateState();
-                }
+                this.actor.add_style_pseudo_class('overview');
+                this._updateState();
             }));
         Main.overview.connect('hiding', Lang.bind(this,
             function() {
                 this._overviewVisible = false;
-                if (this._locked) {
-                    this._unsetClickedSummaryItem();
-                    this._unlock();
-                } else {
-                    this._updateState();
-                }
+                this._escapeTray();
+                this.actor.remove_style_pseudo_class('overview');
+                this._updateState();
             }));
 
+        this._isScreenLocked = false;
+        Main.screenShield.connect('lock-status-changed', Lang.bind(this, this._onScreenLockStatusChanged));
+
+        global.display.add_keybinding('toggle-message-tray',
+                                      new Gio.Settings({ schema: SHELL_KEYBINDINGS_SCHEMA }),
+                                      Meta.KeyBindingFlags.NONE,
+                                      Lang.bind(this, this.toggleAndNavigate));
+
         this._summaryItems = [];
-        // We keep a list of new summary items that were added to the summary since the last
-        // time it was shown to the user. We automatically show the summary to the user if there
-        // are items in this list once the notifications are done showing or once an item gets
-        // added to the summary without a notification being shown.
-        this._newSummaryItems = [];
-        this._longestSummaryItem = null;
         this._chatSummaryItemsCount = 0;
+
+        let pointerWatcher = PointerWatcher.getPointerWatcher();
+        pointerWatcher.addWatch(TRAY_DWELL_CHECK_INTERVAL, Lang.bind(this, this._checkTrayDwell));
+        this._trayDwellTimeoutId = 0;
     },
 
-    _onCornerEnter: function(actor, event) {
-        this._pointerInSummary = true;
+    _checkTrayDwell: function(x, y) {
+        // We only set up dwell timeout when the user is not hovering over the tray
+        // (!this.actor.hover). This avoids bringing up the message tray after the
+        // user clicks on a notification with the pointer on the bottom pixel
+        // of the monitor.
+        if (y == global.screen_height - 1 && !this.actor.hover) {
+            if (this._trayDwellTimeoutId == 0)
+                this._trayDwellTimeoutId = Mainloop.timeout_add(TRAY_DWELL_TIME,
+                                                               Lang.bind(this, this._trayDwellTimeout));
+        } else {
+            this._cancelTrayDwell();
+        }
+    },
+
+    _cancelTrayDwell: function() {
+        if (this._trayDwellTimeoutId != 0) {
+            Mainloop.source_remove(this._trayDwellTimeoutId);
+            this._trayDwellTimeoutId = 0;
+        }
+    },
+
+    _trayDwellTimeout: function() {
+        this._trayDwellTimeoutId = 0;
+
+        this._traySummoned = true;
         this._updateState();
+
+        return false;
     },
 
-    _setSizePosition: function() {
+    _onCloseClicked: function() {
+        if (this._notificationState == State.SHOWN) {
+            this._notification.emit('done-displaying');
+                if (!this._notification.resident)
+                    this._notification.destroy();
+        }
+    },
+
+    _onStyleChanged: function() {
         let monitor = Main.layoutManager.bottomMonitor;
-        this._notificationBin.x = 0;
-        this._notificationBin.width = monitor.width;
+
+        let width = this._notificationWidget.get_width();
+        this._notificationWidget.x = Math.floor((monitor.width - width) / 2);
         this._summaryBin.x = 0;
         this._summaryBin.width = monitor.width;
-
-        if (Clutter.get_default_text_direction() == Clutter.TextDirection.RTL)
-            this._corner.x = 0;
-        else
-            this._corner.x = Main.layoutManager.trayBox.width - 1;
-
-        this._corner.y = Main.layoutManager.trayBox.height - 1;
     },
 
     contains: function(source) {
@@ -1614,27 +1565,7 @@ const MessageTray = new Lang.Class({
             this._summary.insert_child_at_index(summaryItem.actor, this._chatSummaryItemsCount);
         }
 
-        let titleWidth = summaryItem.getTitleNaturalWidth();
-        if (titleWidth > this._summaryItemTitleWidth) {
-            this._summaryItemTitleWidth = titleWidth;
-            if (!this._expandedSummaryItem)
-                this._imaginarySummaryItemTitleWidth = titleWidth;
-            this._longestSummaryItem = summaryItem;
-        }
-
         this._summaryItems.push(summaryItem);
-
-        // We keep this._newSummaryItems to track any new sources that were added to the
-        // summary and show the summary with them to the user for a short period of time
-        // after notifications are done showing. However, we don't want that to happen for
-        // transient sources, which are removed after the notification is shown, but are
-        // not removed fast enough because of the callbacks to avoid the summary popping up.
-        // So we just don't add transient sources to this._newSummaryItems.
-        // We don't want that to happen for chat sources neither, because they
-        // can be added when the user starts a chat from Empathy and they are not transient.
-        // The notification will popup on incoming message anyway. See bug #657249.
-        if (!source.isTransient && !source.isChat)
-            this._newSummaryItems.push(summaryItem);
 
         source.connect('notify', Lang.bind(this, this._onNotify));
 
@@ -1646,14 +1577,15 @@ const MessageTray = new Lang.Class({
                     });
             }));
 
-        summaryItem.actor.connect('notify::hover', Lang.bind(this,
-            function () {
-                this._onSummaryItemHoverChanged(summaryItem);
-            }));
-
         summaryItem.actor.connect('clicked', Lang.bind(this,
-            function (actor, button) {
+            function(actor, button) {
+                actor.grab_key_focus();
                 this._onSummaryItemClicked(summaryItem, button);
+            }));
+        summaryItem.actor.connect('popup-menu', Lang.bind(this,
+            function(actor, button) {
+                actor.grab_key_focus();
+                this._onSummaryItemClicked(summaryItem, 3);
             }));
 
         source.connect('destroy', Lang.bind(this, this._onSourceDestroy));
@@ -1663,6 +1595,12 @@ const MessageTray = new Lang.Class({
         // *first* and not show the summary item until after it hides.
         // So postpone calling _updateState() a tiny bit.
         Meta.later_add(Meta.LaterType.BEFORE_REDRAW, Lang.bind(this, function() { this._updateState(); return false; }));
+
+        this.emit('summary-item-added', summaryItem);
+    },
+
+    getSummaryItems: function() {
+        return this._summaryItems;
     },
 
     _onSourceDestroy: function(source) {
@@ -1672,34 +1610,10 @@ const MessageTray = new Lang.Class({
 
         let summaryItemToRemove = this._summaryItems[index];
 
-        let newSummaryItemsIndex = this._newSummaryItems.indexOf(this._summaryItems[index]);
-        if (newSummaryItemsIndex != -1)
-            this._newSummaryItems.splice(newSummaryItemsIndex, 1);
-
         this._summaryItems.splice(index, 1);
 
         if (source.isChat)
             this._chatSummaryItemsCount--;
-
-        if (this._expandedSummaryItem == summaryItemToRemove)
-            this._expandedSummaryItem = null;
-
-        if (this._longestSummaryItem.source == source) {
-            let newTitleWidth = 0;
-            this._longestSummaryItem = null;
-            for (let i = 0; i < this._summaryItems.length; i++) {
-                let summaryItem = this._summaryItems[i];
-                let titleWidth = summaryItem.getTitleNaturalWidth();
-                if (titleWidth > newTitleWidth) {
-                    newTitleWidth = titleWidth;
-                    this._longestSummaryItem = summaryItem;
-                }
-            }
-
-            this._summaryItemTitleWidth = newTitleWidth;
-            if (!this._expandedSummaryItem)
-                this._imaginarySummaryItemTitleWidth = newTitleWidth;
-        }
 
         let needUpdate = false;
 
@@ -1709,7 +1623,7 @@ const MessageTray = new Lang.Class({
             needUpdate = true;
         }
         if (this._clickedSummaryItem == summaryItemToRemove) {
-            this._unsetClickedSummaryItem();
+            this._setClickedSummaryItem(null);
             needUpdate = true;
         }
 
@@ -1720,10 +1634,6 @@ const MessageTray = new Lang.Class({
     },
 
     _onNotificationDestroy: function(notification) {
-        let unseenNotificationsIndex = this._unseenNotifications.indexOf(notification);
-        if (unseenNotificationsIndex != -1)
-            this._unseenNotifications.splice(unseenNotificationsIndex, 1);
-
         if (this._notification == notification && (this._notificationState == State.SHOWN || this._notificationState == State.SHOWING)) {
             this._updateNotificationTimeout(0);
             this._notificationRemoved = true;
@@ -1735,6 +1645,11 @@ const MessageTray = new Lang.Class({
         notification.destroy();
         if (index != -1)
             this._notificationQueue.splice(index, 1);
+    },
+
+    _onScreenLockStatusChanged: function(screenShield, locked) {
+        this._isScreenLocked = locked;
+        this._updateState();
     },
 
     _lock: function() {
@@ -1754,6 +1669,13 @@ const MessageTray = new Lang.Class({
         this._updateState();
     },
 
+    toggleAndNavigate: function() {
+        // Grab the key focus so that GrabHelper knows
+        // that we have the key grab.
+        this._summary.grab_key_focus();
+        this.toggle();
+    },
+
     hide: function() {
         this._traySummoned = false;
         this.actor.set_hover(false);
@@ -1763,7 +1685,7 @@ const MessageTray = new Lang.Class({
 
     _onNotify: function(source, notification) {
         if (this._summaryBoxPointerItem && this._summaryBoxPointerItem.source == source) {
-            if (this._summaryBoxPointerState == State.HIDING)
+            if (this._summaryBoxPointerState == State.HIDING) {
                 // We are in the process of hiding the summary box pointer.
                 // If there is an update for one of the notifications or
                 // a new notification to be added to the notification stack
@@ -1774,6 +1696,14 @@ const MessageTray = new Lang.Class({
                 // need to be able to re-parent its actor to a different
                 // part of the stage.
                 this._reNotifyAfterHideNotification = notification;
+            } else {
+                // The summary box pointer is showing or shown (otherwise,
+                // this._summaryBoxPointerItem would be null)
+                // Immediately mark the notification as acknowledged, as it's
+                // not going into the queue
+                notification.acknowledged = true;
+            }
+
             return;
         }
 
@@ -1794,134 +1724,12 @@ const MessageTray = new Lang.Class({
         this._updateState();
     },
 
-    _onSummaryItemHoverChanged: function(summaryItem) {
-        if (summaryItem.actor.hover)
-            this._setExpandedSummaryItem(summaryItem);
-    },
-
-    _setExpandedSummaryItem: function(summaryItem) {
-        if (summaryItem == this._expandedSummaryItem)
-            return;
-
-        // We can't just animate individual summary items as the
-        // pointer moves in and out of them, because if they don't
-        // move in sync you get weird-looking wobbling. So whenever
-        // there's a change, we have to re-tween the entire summary
-        // area.
-
-        // Turn off ellipsization for the previously expanded item that is
-        // collapsing and for the item that is expanding because it looks
-        // better that way.
-        if (this._expandedSummaryItem) {
-            // Ideally, we would remove 'expanded' pseudo class when the item
-            // is done collapsing, but we don't track when that happens.
-            this._expandedSummaryItem.actor.remove_style_pseudo_class('expanded');
-            this._expandedSummaryItem.setEllipsization(Pango.EllipsizeMode.NONE);
-        }
-
-        this._expandedSummaryItem = summaryItem;
-        if (this._expandedSummaryItem) {
-            this._expandedSummaryItem.actor.add_style_pseudo_class('expanded');
-            this._expandedSummaryItem.setEllipsization(Pango.EllipsizeMode.NONE);
-        }
-
-        // We tween on a "_expandedSummaryItemTitleWidth" pseudo-property
-        // that represents the current title width of the
-        // expanded/expanding item, or the width of the imaginary
-        // invisible item if we're collapsing everything.
-        Tweener.addTween(this,
-                         { _expandedSummaryItemTitleWidth: this._summaryItemTitleWidth,
-                           time: ANIMATION_TIME,
-                           transition: 'easeOutQuad',
-                           onComplete: this._expandSummaryItemCompleted,
-                           onCompleteScope: this });
-    },
-
-    get _expandedSummaryItemTitleWidth() {
-        if (this._expandedSummaryItem)
-            return this._expandedSummaryItem.getTitleWidth();
-        else
-            return this._imaginarySummaryItemTitleWidth;
-    },
-
-    set _expandedSummaryItemTitleWidth(expansion) {
-        expansion = Math.round(expansion);
-
-        // Expand the expanding item to its new width
-        if (this._expandedSummaryItem)
-            this._expandedSummaryItem.setTitleWidth(expansion);
-        else
-            this._imaginarySummaryItemTitleWidth = expansion;
-
-        // Figure out how much space the other items are currently
-        // using, and how much they need to be shrunk to keep the
-        // total width (including the width of the imaginary item)
-        // constant.
-        let excess = this._summaryItemTitleWidth - expansion;
-        let oldExcess = 0, shrinkage;
-        if (excess) {
-            for (let i = 0; i < this._summaryItems.length; i++) {
-                if (this._summaryItems[i] != this._expandedSummaryItem)
-                    oldExcess += this._summaryItems[i].getTitleWidth();
-            }
-            if (this._expandedSummaryItem)
-                oldExcess += this._imaginarySummaryItemTitleWidth;
-        }
-        if (excess && oldExcess)
-            shrinkage = excess / oldExcess;
-        else
-            shrinkage = 0;
-
-        // Now shrink each one proportionately
-        for (let i = 0; i < this._summaryItems.length; i++) {
-            if (this._summaryItems[i] == this._expandedSummaryItem)
-                continue;
-
-            let oldWidth = this._summaryItems[i].getTitleWidth();
-            let newWidth = Math.floor(oldWidth * shrinkage);
-            excess -= newWidth;
-            this._summaryItems[i].setTitleWidth(newWidth);
-        }
-        if (this._expandedSummaryItem) {
-            let oldWidth = this._imaginarySummaryItemTitleWidth;
-            let newWidth = Math.floor(oldWidth * shrinkage);
-            excess -= newWidth;
-            this._imaginarySummaryItemTitleWidth = newWidth;
-        }
-
-        // If the tray as a whole is fully-expanded, make sure the
-        // left edge doesn't wobble during animation due to rounding.
-        if (this._imaginarySummaryItemTitleWidth == 0 && excess != 0) {
-            for (let i = 0; i < this._summaryItems.length; i++) {
-                if (this._summaryItems[i] == this._expandedSummaryItem)
-                    continue;
-
-                let oldWidth = this._summaryItems[i].getTitleWidth();
-                if (oldWidth != 0) {
-                    this._summaryItems[i].setTitleWidth (oldWidth + excess);
-                    break;
-                }
-            }
-        }
-    },
-
-    _expandSummaryItemCompleted: function() {
-        if (this._expandedSummaryItem)
-            this._expandedSummaryItem.setEllipsization(Pango.EllipsizeMode.END);
-    },
-
     _onSummaryItemClicked: function(summaryItem, button) {
-        if (summaryItem.source.handleSummaryClick())
-            this._unsetClickedSummaryItem();
-        else if (!this._clickedSummaryItem ||
-                 this._clickedSummaryItem != summaryItem ||
-                 this._clickedSummaryItemMouseButton != button) {
-            this._clickedSummaryItem = summaryItem;
-            this._clickedSummaryItemMouseButton = button;
-
-            summaryItem.source.emit('summary-item-clicked', button);
+        if (summaryItem.source.handleSummaryClick()) {
+            this._setClickedSummaryItem(null);
         } else {
-            this._unsetClickedSummaryItem();
+            if (!this._setClickedSummaryItem(summaryItem, button))
+                this._setClickedSummaryItem(null);
         }
 
         this._updateState();
@@ -1934,6 +1742,9 @@ const MessageTray = new Lang.Class({
 
     _onTrayHoverChanged: function() {
         if (this.actor.hover) {
+            // No dwell inside notifications at the bottom of the screen
+            this._cancelTrayDwell();
+
             // Don't do anything if the one pixel area at the bottom is hovered over while the tray is hidden.
             if (this._trayState == State.HIDDEN && this._notificationState == State.HIDDEN)
                 return;
@@ -2015,7 +1826,6 @@ const MessageTray = new Lang.Class({
         if (status == GnomeSession.PresenceStatus.BUSY) {
             // remove notification and allow the summary to be closed now
             this._updateNotificationTimeout(0);
-            this._unsetSummaryTimeout();
             this._busy = true;
         } else if (status != GnomeSession.PresenceStatus.IDLE) {
             // We preserve the previous value of this._busy if the status turns to IDLE
@@ -2045,7 +1855,6 @@ const MessageTray = new Lang.Class({
             this._pointerInTray = false;
             this._pointerInSummary = false;
             this._updateNotificationTimeout(0);
-            this._unsetSummaryTimeout();
             this._updateState();
         }
         return false;
@@ -2055,8 +1864,9 @@ const MessageTray = new Lang.Class({
         this._unlock();
         this._pointerInTray = false;
         this._pointerInSummary = false;
+        this._traySummoned = false;
+        this._setClickedSummaryItem(null);
         this._updateNotificationTimeout(0);
-        this._unsetSummaryTimeout();
         this._updateState();
     },
 
@@ -2067,18 +1877,37 @@ const MessageTray = new Lang.Class({
     // at the present time.
     _updateState: function() {
         // Notifications
-        let notificationUrgent = this._notificationQueue.length > 0 && this._notificationQueue[0].urgency == Urgency.CRITICAL;
-        let notificationsPending = this._notificationQueue.length > 0 && ((!this._busy && !this._inFullscreen) || notificationUrgent);
+        let notificationQueue = this._notificationQueue.filter(Lang.bind(this, function(notification) {
+            if (this._isScreenLocked)
+                return notification.showWhenLocked;
+            else
+                return true;
+        }));
+        let notificationUrgent = notificationQueue.length > 0 && notificationQueue[0].urgency == Urgency.CRITICAL;
+        // notificationsLimited is false when the screen is locked, because they go through
+        // different filtering, and we want to show non urgent messages at times
+        let notificationsLimited = (this._busy || this._inFullscreen) && !this._isScreenLocked;
+        let notificationsPending = notificationQueue.length > 0 && (!notificationsLimited || notificationUrgent);
+        let nextNotification = notificationQueue.length > 0 ? notificationQueue[0] : null;
         let notificationPinned = this._pointerInTray && !this._pointerInSummary && !this._notificationRemoved;
-        let notificationExpanded = this._notificationBin.y < - this.actor.height;
-        let notificationExpired = (this._notificationTimeoutId == 0 && !(this._notification && this._notification.urgency == Urgency.CRITICAL) && !this._pointerInTray && !this._locked && !(this._pointerInKeyboard && notificationExpanded)) || this._notificationRemoved;
+        let notificationExpanded = this._notification && this._notification.expanded;
+        let notificationExpired = this._notificationTimeoutId == 0 &&
+                                  !(this._notification && this._notification.urgency == Urgency.CRITICAL) &&
+                                  !this._pointerInTray &&
+                                  !this._locked &&
+                                  !(this._pointerInKeyboard && notificationExpanded);
+        let notificationLockedOut = this._isScreenLocked && (this._notification && !this._notification.showWhenLocked);
+        // TODO: how to deal with locked out notiifcations if want to keep showing notifications?!
+        let notificationMustClose = this._notificationRemoved || notificationLockedOut || (notificationExpired && this._userActiveWhileNotificationShown);
         let canShowNotification = notificationsPending && this._summaryState == State.HIDDEN;
 
         if (this._notificationState == State.HIDDEN) {
-            if (canShowNotification)
-                this._showNotification();
+            if (canShowNotification) {
+                this._showNotification(nextNotification);
+                this._notificationQueue.splice(this._notificationQueue.indexOf(nextNotification), 1);
+            }
         } else if (this._notificationState == State.SHOWN) {
-            if (notificationExpired)
+            if (notificationMustClose)
                 this._hideNotification();
             else if (notificationPinned && !notificationExpanded)
                 this._expandNotification(false);
@@ -2088,10 +1917,8 @@ const MessageTray = new Lang.Class({
 
         // Summary
         let summarySummoned = this._pointerInSummary || this._overviewVisible ||  this._traySummoned;
-        let summaryPinned = this._summaryTimeoutId != 0 || this._pointerInTray || summarySummoned || this._locked;
+        let summaryPinned = this._pointerInTray || summarySummoned || this._locked;
         let summaryHovered = this._pointerInTray || this._pointerInSummary;
-        let summaryVisibleWithNoHover = (this._overviewVisible || this._locked) && !summaryHovered;
-        let summaryNotificationIsForExpandedSummaryItem = (this._clickedSummaryItem == this._expandedSummaryItem);
 
         let notificationsVisible = (this._notificationState == State.SHOWING ||
                                     this._notificationState == State.SHOWN);
@@ -2099,27 +1926,12 @@ const MessageTray = new Lang.Class({
 
         let summaryOptionalInOverview = this._overviewVisible && !this._locked && !summaryHovered;
         let mustHideSummary = (notificationsPending && (notificationUrgent || summaryOptionalInOverview))
-                              || notificationsVisible;
+                              || notificationsVisible || this._isScreenLocked;
 
-        if (this._summaryState == State.HIDDEN && !mustHideSummary) {
-            if (summarySummoned) {
-                this._showSummary(0);
-            } else if (notificationsDone && !this._busy && !this._inFullscreen) {
-                if (this._backFromAway && this._unseenNotifications.length > 0)
-                    this._showSummary(LONGER_SUMMARY_TIMEOUT);
-                else if (this._newSummaryItems.length > 0)
-                    this._showSummary(SUMMARY_TIMEOUT);
-            }
-        } else if (this._summaryState == State.SHOWN) {
-            if (!summaryPinned || mustHideSummary)
-                this._hideSummary();
-            else if (summaryVisibleWithNoHover && !summaryNotificationIsForExpandedSummaryItem)
-                // If we are hiding the summary, we'll collapse the expanded summary item when we are done
-                // so that there is no animation. However, we should collapse the expanded summary item
-                // if the summary is visible, but not hovered over, and the summary notification for the
-                // expanded summary item is not being shown.
-                this._setExpandedSummaryItem(null);
-        }
+        if (this._summaryState == State.HIDDEN && !mustHideSummary && summarySummoned)
+            this._showSummary();
+        else if (this._summaryState == State.SHOWN && (!summaryPinned || mustHideSummary))
+            this._hideSummary();
 
         // Summary notification
         let haveClickedSummaryItem = this._clickedSummaryItem != null;
@@ -2130,7 +1942,7 @@ const MessageTray = new Lang.Class({
         // to show notifications for legacy tray icons, but this would be necessary if we did.
         let requestedNotificationStackIsEmpty = (this._clickedSummaryItemMouseButton == 1 && this._clickedSummaryItem.source.notifications.length == 0);
         let wrongSummaryNotificationStack = (this._clickedSummaryItemMouseButton == 1 &&
-                                             this._summaryBoxPointer.bin.child != this._clickedSummaryItem.notificationStackView);
+                                             this._summaryBoxPointer.bin.child != this._clickedSummaryItem.notificationStackWidget);
         let wrongSummaryRightClickMenu = (this._clickedSummaryItemMouseButton == 3 &&
                                           this._summaryBoxPointer.bin.child != this._clickedSummaryItem.rightClickMenu);
         let wrongSummaryBoxPointer = (haveClickedSummaryItem &&
@@ -2186,49 +1998,115 @@ const MessageTray = new Lang.Class({
                       time: ANIMATION_TIME,
                       transition: 'easeOutQuad'
                     });
+
+        // Don't actually take a modal grab in the overview.
+        // Just add something to the grab stack that we can
+        // pop later.
+        this._grabHelper.grab({ actor: this.actor,
+                                modal: !this._overviewVisible,
+                                onUngrab: Lang.bind(this, this._escapeTray) });
+
+        // Don't move the windows up if we are in the overview,
+        // but show the tray in the ctrl+alt+tab list.
+        if (this._overviewVisible) {
+            Main.ctrlAltTabManager.addGroup(this._summary, _("Message Tray"), 'start-here',
+                                            { sortGroup: CtrlAltTab.SortGroup.BOTTOM });
+            return;
+        }
+
+        let bottomMonitor = Main.layoutManager.bottomMonitor;
+        let geometry = new Clutter.Geometry({ x: bottomMonitor.x,
+                                              y: bottomMonitor.y,
+                                              width: bottomMonitor.width,
+                                              height: bottomMonitor.height
+                                            });
+        this._desktopClone = new Clutter.Clone({ source: global.window_group, clip: geometry });
+        Main.uiGroup.insert_child_above(this._desktopClone, global.window_group);
+        this._desktopClone.x = 0;
+        this._desktopClone.y = 0;
+        this._desktopClone.show();
+
+        this._lightbox.show();
+
+        this._desktopClone._progress = 0;
+        Tweener.addTween(this._desktopClone,
+                         { _progress: this.actor.height,
+                           time: ANIMATION_TIME,
+                           transition: 'easeOutQuad',
+                           onUpdate: Lang.bind(this, function() {
+                               let progress = Math.round(this._desktopClone._progress);
+                               this._desktopClone.y = - progress;
+                               this._desktopClone.set_clip(geometry.x,
+                                                           geometry.y + progress,
+                                                           geometry.width,
+                                                           geometry.height - progress);
+                           })
+                         });
     },
 
     _hideTray: function() {
+        // Note that we might have entered here without a grab,
+        // which would happen if GrabHelper ungrabbed for us.
+        // This is a no-op in that case.
+        this._grabHelper.ungrab({ actor: this.actor });
+
         this._tween(this.actor, '_trayState', State.HIDDEN,
                     { y: 0,
                       time: ANIMATION_TIME,
                       transition: 'easeOutQuad'
                     });
+
+        // If we are coming back from the overview, there are no windows
+        // to be moved. Just remove the tray from the ctrl+alt+tab list.
+        if (!this._desktopClone) {
+            Main.ctrlAltTabManager.removeGroup(this._summary);
+            return;
+        }
+
+        let geometry = this._desktopClone.clip;
+        this._desktopClone._progress = 0;
+        Tweener.addTween(this._desktopClone,
+                         { _progress: this.actor.height,
+                           time: ANIMATION_TIME,
+                           transition: 'easeOutQuad',
+                           onComplete: Lang.bind(this, function() {
+                               this._desktopClone.destroy();
+                               this._desktopClone = null;
+                           }),
+                           onUpdate: Lang.bind(this, function() {
+                               let progress = Math.round(this._desktopClone._progress);
+                               this._desktopClone.y = progress - this.actor.height;
+                               this._desktopClone.set_clip(geometry.x,
+                                                           geometry.y - progress,
+                                                           geometry.width,
+                                                           geometry.height + progress);
+                           })
+                         });
+
+        this._lightbox.hide();
     },
 
     _onIdleMonitorWatch: function(monitor, id, userBecameIdle) {
         this.idleMonitor.remove_watch(this._idleMonitorWatchId);
         this._idleMonitorWatchId = 0;
-
-        if (userBecameIdle) {
-            // The user became idle, which means the user was active while the notifications were
-            // shown and we can unset this._unseenNotifications .
-            this._unseenNotiications = [];
-        } else if (this._unseenNotifications.length == 1 && this._unseenNotifications[0] == this._notification) {
-            // The user became active while the only notification in this._unseenNotifications is being shown
-            // as this._notification , so we can unset this._unseenNotifications .
-            this._unseenNotifications = [];
-        } else {
-            // The user became active and we have one or more unseen notifications. We should show
-            // the message tray to the user to inform the user about the missed notifications.
-            this._backFromAway = true;
-            this._updateState();
-       }
+        if (!userBecameIdle)
+            this._updateNotificationTimeout(2000);
+        this._userActiveWhileNotificationShown = true;
+        this._updateState();
     },
 
-    _showNotification: function() {
-        this._notification = this._notificationQueue.shift();
-        this._unseenNotifications.push(this._notification);
-        if (this._idleMonitorWatchId == 0)
-            this._idleMonitorWatchId = this.idleMonitor.add_watch(1000,
-                                                                  Lang.bind(this, this._onIdleMonitorWatch));
+    _showNotification: function(notification) {
+        this._notification = notification;
+        this._userActiveWhileNotificationShown = this.idleMonitor.get_idletime() <= IDLE_TIME;
+        this._idleMonitorWatchId = this.idleMonitor.add_watch(IDLE_TIME,
+                                                              Lang.bind(this, this._onIdleMonitorWatch));
         this._notificationClickedId = this._notification.connect('done-displaying',
                                                                  Lang.bind(this, this._escapeTray));
         this._notificationBin.child = this._notification.actor;
 
-        this._notificationBin.opacity = 0;
-        this._notificationBin.y = 0;
-        this._notificationBin.show();
+        this._notificationWidget.opacity = 0;
+        this._notificationWidget.y = 0;
+        this._notificationWidget.show();
 
         this._updateShowingNotification();
 
@@ -2247,7 +2125,9 @@ const MessageTray = new Lang.Class({
     },
 
     _updateShowingNotification: function() {
-        Tweener.removeTweens(this._notificationBin);
+        this._notification.acknowledged = true;
+
+        Tweener.removeTweens(this._notificationWidget);
 
         // We auto-expand notifications with CRITICAL urgency.
         // We use Tweener.removeTweens() to remove a tween that was hiding the notification we are
@@ -2263,7 +2143,7 @@ const MessageTray = new Lang.Class({
         // notifications that might have been in the process of hiding get full opacity.
         //
         // We tween any notification showing in the banner mode to banner height
-        // (this._notificationBin.y = -this.actor.height).
+        // (this._notificationWidget.y = -this._notificationWidget.height).
         // This ensures that both new notifications and notifications in the banner mode that might
         // have been in the process of hiding are shown with the banner height.
         //
@@ -2271,7 +2151,7 @@ const MessageTray = new Lang.Class({
         // notification is being shown.
         //
         // We don't set the y parameter for the tween for expanded notifications because
-        // this._expandNotification() will result in getting this._notificationBin.y set to the appropriate
+        // this._expandNotification() will result in getting this._notificationWidget.y set to the appropriate
         // fully expanded value.
         let tweenParams = { opacity: 255,
                             time: ANIMATION_TIME,
@@ -2280,9 +2160,9 @@ const MessageTray = new Lang.Class({
                             onCompleteScope: this
                           };
         if (!this._notification.expanded)
-            tweenParams.y = - this.actor.height;
+            tweenParams.y = -this._notificationWidget.height;
 
-        this._tween(this._notificationBin, '_notificationState', State.SHOWN, tweenParams);
+        this._tween(this._notificationWidget, '_notificationState', State.SHOWN, tweenParams);
    },
 
     _showNotificationCompleted: function() {
@@ -2299,13 +2179,6 @@ const MessageTray = new Lang.Class({
             this._notificationTimeoutId =
                 Mainloop.timeout_add(timeout,
                                      Lang.bind(this, this._notificationTimeout));
-    },
-
-    _unsetSummaryTimeout: function(timeout) {
-        if (this._summaryTimeoutId) {
-            Mainloop.source_remove(this._summaryTimeoutId);
-            this._summaryTimeoutId = 0;
-        }
     },
 
     _notificationTimeout: function() {
@@ -2326,25 +2199,37 @@ const MessageTray = new Lang.Class({
     },
 
     _hideNotification: function() {
-        this._focusGrabber.ungrabFocus();
+        this._grabHelper.ungrab({ actor: this._notification.actor });
+
         if (this._notificationExpandedId) {
             this._notification.disconnect(this._notificationExpandedId);
             this._notificationExpandedId = 0;
         }
 
-        this._tween(this._notificationBin, '_notificationState', State.HIDDEN,
-                    { y: this.actor.height,
-                      opacity: 0,
-                      time: ANIMATION_TIME,
-                      transition: 'easeOutQuad',
-                      onComplete: this._hideNotificationCompleted,
-                      onCompleteScope: this
-                    });
+        if (this._notificationRemoved) {
+            this._notificationWidget.y = this.actor.height;
+            this._notificationWidget.opacity = 0;
+            this._notificationState = State.HIDDEN;
+            this._hideNotificationCompleted();
+        } else {
+            this._tween(this._notificationWidget, '_notificationState', State.HIDDEN,
+                        { y: this.actor.height,
+                          opacity: 0,
+                          time: ANIMATION_TIME,
+                          transition: 'easeOutQuad',
+                          onComplete: this._hideNotificationCompleted,
+                          onCompleteScope: this
+                        });
+
+        }
     },
 
     _hideNotificationCompleted: function() {
         this._notificationRemoved = false;
-        this._notificationBin.hide();
+        this._notificationWidget.hide();
+        this._closeButton.hide();
+        this._pointerInTray = false;
+        this.actor.hover = false; // Clutter doesn't emit notify::hover when actors move
         this._notificationBin.child = null;
         this._notification.collapseCompleted();
         this._notification.disconnect(this._notificationClickedId);
@@ -2358,7 +2243,8 @@ const MessageTray = new Lang.Class({
     _expandNotification: function(autoExpanding) {
         // Don't grab focus in notifications that are auto-expanded.
         if (!autoExpanding)
-            this._focusGrabber.grabFocus(this._notification.actor);
+            this._grabHelper.grab({ actor: this._notification.actor,
+                                    grabFocus: true });
 
         if (!this._notificationExpandedId)
             this._notificationExpandedId =
@@ -2369,29 +2255,30 @@ const MessageTray = new Lang.Class({
     },
 
     _onNotificationExpanded: function() {
-        let expandedY = - this._notificationBin.height;
+        let expandedY = - this._notificationWidget.height;
+        this._closeButton.show();
 
         // Don't animate the notification to its new position if it has shrunk:
         // there will be a very visible "gap" that breaks the illusion.
-
-        if (this._notificationBin.y < expandedY)
-            this._notificationBin.y = expandedY;
-        else if (this._notification.y != expandedY)
-            this._tween(this._notificationBin, '_notificationState', State.SHOWN,
+        if (this._notificationWidget.y < expandedY) {
+            this._notificationWidget.y = expandedY;
+        } else if (this._notification.y != expandedY) {
+            this._tween(this._notificationWidget, '_notificationState', State.SHOWN,
                         { y: expandedY,
                           time: ANIMATION_TIME,
                           transition: 'easeOutQuad'
                         });
-   },
+        }
+    },
 
     // We use this function to grab focus when the user moves the pointer
     // to a notification with CRITICAL urgency that was already auto-expanded.
     _ensureNotificationFocused: function() {
-        this._focusGrabber.grabFocus(this._notification.actor);
+        this._grabHelper.grab({ actor: this._notification.actor,
+                                grabFocus: true });
     },
 
-    _showSummary: function(timeout) {
-        this._updateSeenSummaryItems();
+    _showSummary: function() {
         this._summaryBin.opacity = 0;
         this._summaryBin.y = this.actor.height;
         this._tween(this._summaryBin, '_summaryState', State.SHOWN,
@@ -2399,47 +2286,15 @@ const MessageTray = new Lang.Class({
                       opacity: 255,
                       time: ANIMATION_TIME,
                       transition: 'easeOutQuad',
-                      onComplete: this._showSummaryCompleted,
-                      onCompleteScope: this,
-                      onCompleteParams: [timeout]
                     });
     },
 
-    _showSummaryCompleted: function(timeout) {
-        if (timeout != 0) {
-            this._summaryTimeoutId =
-                Mainloop.timeout_add(timeout * 1000,
-                                     Lang.bind(this, this._summaryTimeout));
-        }
-    },
-
-    _summaryTimeout: function() {
-        this._summaryTimeoutId = 0;
-        this._updateState();
-        return false;
-    },
-
     _hideSummary: function() {
-        this._updateSeenSummaryItems();
         this._tween(this._summaryBin, '_summaryState', State.HIDDEN,
                     { opacity: 0,
                       time: ANIMATION_TIME,
                       transition: 'easeOutQuad',
-                      onComplete: this._hideSummaryCompleted,
-                      onCompleteScope: this,
                     });
-    },
-
-    _hideSummaryCompleted: function() {
-        this._setExpandedSummaryItem(null);
-    },
-
-    _updateSeenSummaryItems: function() {
-        if (this._backFromAway) {
-            this._backFromAway = false;
-            this._unseenNotifications = [];
-        }
-        this._newSummaryItems = [];
     },
 
     _showSummaryBoxPointer: function() {
@@ -2449,27 +2304,28 @@ const MessageTray = new Lang.Class({
         this._summaryBoxPointerDoneDisplayingId = this._summaryBoxPointerItem.connect('done-displaying-content',
                                                                                       Lang.bind(this, this._escapeTray));
         if (this._clickedSummaryItemMouseButton == 1) {
-            this._notificationQueue = this._notificationQueue.filter( Lang.bind(this,
-                function(notification) {
-                    return this._summaryBoxPointerItem.source != notification.source;
-                }));
+            let newQueue = [];
+            for (let i = 0; i < this._notificationQueue.length; i++) {
+                let notification = this._notificationQueue[i];
+                let sameSource = this._summaryBoxPointerItem.source == notification.source;
+                if (sameSource)
+                    notification.acknowledged = true;
+                else
+                    newQueue.push(notification);
+            }
+            this._notificationQueue = newQueue;
+
+            this._summaryBoxPointer.bin.child = this._summaryBoxPointerItem.notificationStackWidget;
             this._summaryBoxPointerItem.prepareNotificationStackForShowing();
-            this._summaryBoxPointer.bin.child = this._summaryBoxPointerItem.notificationStackView;
-            this._summaryBoxPointerItem.scrollTo(St.Side.BOTTOM);
         } else if (this._clickedSummaryItemMouseButton == 3) {
             this._summaryBoxPointer.bin.child = this._clickedSummaryItem.rightClickMenu;
         }
 
-        this._focusGrabber.grabFocus(this._summaryBoxPointer.bin.child);
-
-        this._clickedSummaryItemAllocationChangedId =
-            this._clickedSummaryItem.actor.connect('allocation-changed',
-                                                   Lang.bind(this, this._adjustSummaryBoxPointerPosition));
-        // _clickedSummaryItem.actor can change absolute position without changing allocation
-        this._summaryMotionId = this._summary.connect('allocation-changed',
-                                                      Lang.bind(this, this._adjustSummaryBoxPointerPosition));
-        this._trayMotionId = Main.layoutManager.trayBox.connect('notify::anchor-y',
-                                                                Lang.bind(this, this._adjustSummaryBoxPointerPosition));
+        this._grabHelper.grab({ actor: this._summaryBoxPointer.bin.child,
+                                untracked: true,
+                                grabFocus: true,
+                                onUngrab: Lang.bind(this, this._onSummaryBoxPointerUngrabbed) });
+        this._lock();
 
         this._summaryBoxPointer.actor.opacity = 0;
         this._summaryBoxPointer.actor.show();
@@ -2486,7 +2342,6 @@ const MessageTray = new Lang.Class({
         if (this._summaryBoxPointerItem.notificationStack.get_n_children() == 0)
             this._hideSummaryBoxPointer();
         this._adjustSummaryBoxPointerPosition();
-
     },
 
     _adjustSummaryBoxPointerPosition: function() {
@@ -2496,8 +2351,13 @@ const MessageTray = new Lang.Class({
         this._summaryBoxPointer.setPosition(this._clickedSummaryItem.actor, 0);
     },
 
-    _unsetClickedSummaryItem: function() {
-        if (this._clickedSummaryItemAllocationChangedId) {
+    _setClickedSummaryItem: function(item, button) {
+        if (item == this._clickedSummaryItem &&
+            button == this._clickedSummaryItemMouseButton)
+            return false;
+
+        if (this._clickedSummaryItem) {
+            this._clickedSummaryItem.actor.remove_style_pseudo_class('selected');
             this._clickedSummaryItem.actor.disconnect(this._clickedSummaryItemAllocationChangedId);
             this._summary.disconnect(this._summaryMotionId);
             Main.layoutManager.trayBox.disconnect(this._trayMotionId);
@@ -2506,27 +2366,29 @@ const MessageTray = new Lang.Class({
             this._trayMotionId = 0;
         }
 
-        if (this._clickedSummaryItem)
-            this._clickedSummaryItem.actor.remove_style_pseudo_class('selected');
-        this._clickedSummaryItem = null;
-        this._clickedSummaryItemMouseButton = -1;
-    },
+        this._clickedSummaryItem = item;
+        this._clickedSummaryItemMouseButton = button;
 
-    _hideSummaryBoxPointer: function() {
-        // We should be sure to hide the box pointer if all notifications in it are destroyed while
-        // it is hiding, so that we don't show an an animation of an empty blob being hidden.
-        if (this._summaryBoxPointerState == State.HIDING &&
-            this._summaryBoxPointerItem.notificationStack.get_n_children() == 0) {
-            this._summaryBoxPointer.actor.hide();
-            return;
+        if (this._clickedSummaryItem) {
+            this._clickedSummaryItem.source.emit('summary-item-clicked', button);
+            this._clickedSummaryItem.actor.add_style_pseudo_class('selected');
+            this._clickedSummaryItemAllocationChangedId =
+                this._clickedSummaryItem.actor.connect('allocation-changed',
+                                                       Lang.bind(this, this._adjustSummaryBoxPointerPosition));
+            // _clickedSummaryItem.actor can change absolute position without changing allocation
+            this._summaryMotionId = this._summary.connect('allocation-changed',
+                                                          Lang.bind(this, this._adjustSummaryBoxPointerPosition));
+            this._trayMotionId = Main.layoutManager.trayBox.connect('notify::anchor-y',
+                                                                    Lang.bind(this, this._adjustSummaryBoxPointerPosition));
         }
 
-        this._summaryBoxPointerState = State.HIDING;
-        // Unset this._clickedSummaryItem if we are no longer showing the summary
-        if (this._summaryState != State.SHOWN)
-            this._unsetClickedSummaryItem();
+        return true;
+    },
 
-        this._focusGrabber.ungrabFocus();
+    _onSummaryBoxPointerUngrabbed: function() {
+        this._summaryBoxPointerState = State.HIDING;
+        this._unlock();
+
         if (this._summaryBoxPointerItem.source.notifications.length == 0) {
             this._summaryBoxPointer.actor.hide();
             this._hideSummaryBoxPointerCompleted();
@@ -2535,8 +2397,20 @@ const MessageTray = new Lang.Class({
         }
     },
 
+    _hideSummaryBoxPointer: function() {
+        // We should be sure to hide the box pointer if all notifications in it are destroyed while
+        // it is hiding, so that we don't show an animation of an empty blob being hidden.
+        if (this._summaryBoxPointerState == State.HIDING &&
+            this._summaryBoxPointerItem.notificationStack.get_n_children() == 0) {
+            this._summaryBoxPointer.actor.hide();
+            return;
+        }
+
+        this._grabHelper.ungrab({ actor: this._summaryBoxPointer.bin.child });
+    },
+
     _hideSummaryBoxPointerCompleted: function() {
-        let doneShowingNotificationStack = (this._summaryBoxPointer.bin.child == this._summaryBoxPointerItem.notificationStackView);
+        let doneShowingNotificationStack = (this._summaryBoxPointer.bin.child == this._summaryBoxPointerItem.notificationStackWidget);
 
         this._summaryBoxPointerState = State.HIDDEN;
         this._summaryBoxPointer.bin.child = null;
@@ -2566,6 +2440,7 @@ const MessageTray = new Lang.Class({
             this._updateState();
     }
 });
+Signals.addSignalMethods(MessageTray.prototype);
 
 const SystemNotificationSource = new Lang.Class({
     Name: 'SystemNotificationSource',
@@ -2573,6 +2448,7 @@ const SystemNotificationSource = new Lang.Class({
 
     _init: function() {
         this.parent(_("System Information"), 'dialog-information', St.IconType.SYMBOLIC);
+        this.setTransient(true);
     },
 
     open: function() {

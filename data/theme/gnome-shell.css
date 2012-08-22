@@ -48,9 +48,8 @@ stage {
 .dash-label,
 .window-caption,
 .switcher-list, 
-.source-title,
 .app-well-app > .overview-icon,
-.remove-favorite > .overview-icon,
+.show-apps > .overview-icon,
 .search-result-content > .overview-icon {
     font-size: 9pt;
     font-weight: bold;
@@ -58,54 +57,48 @@ stage {
 
 /* Scroll Bars */
 
-StScrollBar
-{
+StScrollBar {
     padding: 0px;
 }
 
-StScrollView.vfade
-{
+StScrollView.vfade {
     -st-vfade-offset: 68px;
 }
 
-StScrollView.hfade
-{
+StScrollView.hfade {
     -st-hfade-offset: 68px;
 }
 
-StScrollView StScrollBar
-{
-    min-width: 16px;
-    min-height: 16px;
+StScrollView StScrollBar {
+    min-width: 14px;
+    min-height: 14px;
 }
-
 
 StScrollBar StBin#trough {
-    background-color: #080808;
-    border: 1px solid #2d2d2d;
+    background-color: rgba(0,0,0,0.3);
     border-radius: 8px;
 }
 
-StScrollBar StButton#vhandle
-{
-    background-image: url("scroll-vhandle.svg");
-    background-color: #252525;
-    border: 1px solid #080808;
+StScrollBar StButton#vhandle {
+    background-color: #5d6464;
+    border: 2px solid #242424;
     border-radius: 8px;
 }
 
-StScrollBar StButton#hhandle
-{
-    background-image: url("scroll-hhandle.svg");
-    background-color: #252525;
-    border: 1px solid #080808;
+StScrollBar StButton#hhandle {
+    background-color: #5d6464;
+    border: 2px solid #242424;
     border-radius: 8px;
 }
 
 StScrollBar StButton#hhandle:hover,
-StScrollBar StButton#vhandle:hover
-{
-    background-color: #292929;
+StScrollBar StButton#vhandle:hover {
+    background-color: #777d7c;
+}
+
+StScrollBar StButton#hhandle:active,
+StScrollBar StButton#vhandle:active {
+    background-color: #3465a4;
 }
 
 /* Check Boxes */
@@ -136,7 +129,7 @@ StScrollBar StButton#vhandle:hover
 
 .popup-menu-boxpointer {
     -arrow-border-radius: 8px;
-    -arrow-background-color: rgba(0,0,0,0.9);
+    -arrow-background-color: black;
     -arrow-border-width: 2px;
     -arrow-border-color: #a5a5a5;
     -arrow-base: 24px;
@@ -202,7 +195,7 @@ StScrollBar StButton#vhandle:hover
     background-color: #4c4c4c;
 }
 
-.popup-menu-item:insensitive {
+StButton.popup-menu-item:insensitive {
     color: #9f9f9f;
 }
 
@@ -333,6 +326,79 @@ StScrollBar StButton#vhandle:hover
     color: #9f9f9f;
 }
 
+/* Entries */
+
+#searchEntry,
+.notification StEntry,
+.login-dialog-prompt-entry,
+.prompt-dialog-password-entry {
+    color: rgb(64, 64, 64);
+    caret-color: rgb(64, 64, 64);
+    font-size: 12pt;
+    caret-size: 1px;
+    selected-color: black;
+    padding: 4px 12px;
+}
+
+#searchEntry,
+.notification StEntry {
+    border: 2px solid rgba(245,245,245,0.2);
+    background-gradient-start: rgba(5,5,6,0.1);
+    background-gradient-end: rgba(254,254,254,0.1);
+    background-gradient-direction: vertical;
+    transition-duration: 300;
+    box-shadow: inset 0px 2px 4px rgba(0,0,0,0.6);
+}
+
+#searchEntry:focus,
+#searchEntry:hover,
+.notification StEntry:focus,
+.login-dialog-prompt-entry,
+.prompt-dialog-password-entry {
+    border: 2px solid rgb(136,138,133);
+    background-gradient-start: rgb(200,200,200);
+    background-gradient-end: white;
+    background-gradient-direction: vertical;
+    box-shadow: inset 0px 2px 4px rgba(0,0,0,0.6);
+}
+
+.notification StEntry:focus,
+.prompt-dialog-password-entry:focus,
+.login-dialog-prompt-entry:focus {
+    border: 2px solid #3465a4;
+}
+
+#searchEntry {
+    color: rgb(128, 128, 128);
+    caret-color: rgb(128, 128, 128);
+}
+
+#searchEntry:focus {
+    color: rgb(64, 64, 64);
+    caret-color: rgb(64, 64, 64);
+    font-weight: bold;
+    transition-duration: 0;
+}
+
+.notification StEntry,
+.prompt-dialog-password-entry,
+.login-dialog-prompt-entry {
+    border-radius: 5px;
+    padding: 4px 4px;
+}
+
+.prompt-dialog-password-entry .capslock-warning,
+.login-dialog-prompt-entry .capslock-warning {
+    icon-size: 16px;
+    warning-color: #999;
+    padding: 0 4px;
+}
+
+.login-dialog-prompt-entry:insensitive {
+    color: rgba(0,0,0,0.7);
+    border: 2px solid #565656;
+}
+
 /* Panel */
 
 #panel {
@@ -460,6 +526,7 @@ StScrollBar StButton#vhandle:hover
     border-radius: 5px;
     width: 48pt;
     height: 48pt;
+    background-size: contain;
 }
 
 .status-chooser-user-icon:hover {
@@ -536,12 +603,28 @@ StScrollBar StButton#vhandle:hover
     -shell-caption-spacing: 12px;
 }
 
-.window-close {
+.window-close, .notification-close {
     background-image: url("close-window.svg");
     background-size: 34px;
     height: 34px;
     width: 34px;
+}
+
+.window-close {
     -shell-close-overlap: 20px;
+}
+
+.notification-close {
+    /* we start out in the top right of the
+     * notification, inset.
+     *
+     * center is 32px/2 = 17px
+     *
+     * adjust left 2px
+     * adjust down 8px */
+
+    -shell-close-overlap-x: 15px;
+    -shell-close-overlap-y: 12px;
 }
 
 .window-close:rtl {
@@ -581,74 +664,16 @@ StScrollBar StButton#vhandle:hover
     spacing: 1em;
 }
 
-#viewSelectorTabBar {
-    padding: 1em;
-}
-
 /* Search Box */
 
-#searchArea {
-    padding: 0px 24px;
-}
-
 #searchEntry {
-    padding: 4px 12px;
     border-radius: 17px;
-    font-size: 12pt;
-    color: rgb(128, 128, 128);
-    border: 2px solid rgba(245,245,245,0.2);
-    background-gradient-start: rgba(5,5,6,0.1);
-    background-gradient-end: rgba(254,254,254,0.1);
-    background-gradient-direction: vertical;
-    selected-color: black;
-    caret-color: rgb(128, 128, 128);
-    caret-size: 1px;
-    width: 250px;
-    transition-duration: 300;
-    box-shadow: inset 0px 2px 4px rgba(0,0,0,0.6);
-}
-
-#searchEntry:focus,
-#searchEntry:hover {
-    border: 2px solid rgb(136,138,133);
-    background-gradient-start: rgb(200,200,200);
-    background-gradient-end: white;
-    background-gradient-direction: vertical;
-}
-
-#searchEntry:hover {
-    transition-duration: 300;
-}
-
-#searchEntry:focus {
-    color: rgb(64, 64, 64);
-    font-weight: bold;
-    transition-duration: 0;
+    width: 320px;
 }
 
 .search-entry-icon {
     icon-size: 1em;
     color: #8d8f8a;
-}
-
-/* View Tabs */
-
-.view-tab-title {
-    color: #888a85;
-    font-size: 12pt;
-    font-weight: bold;
-    padding: 0px 0.75em;
-    height: 1.5em;
-}
-
-.view-tab-title:hover {
-    color: #bbb;
-}
-
-.view-tab-title:selected {
-    color: #000000;
-    background-color: #c2c7cd;
-    border-radius: 0.25em;
 }
 
 /* Search Results */
@@ -766,21 +791,12 @@ StScrollBar StButton#vhandle:hover
     outline: 1px solid #aaa;
 }
 
-.dash-item-container > .app-well-app {
+.dash-item-container > StButton {
     padding: 4px 8px;
 }
 
-.remove-favorite-icon {
-    color: #a0a0a0;
-}
-
-.remove-favorite-icon:hover {
-    color: white;
-    icon-shadow: black 0px 2px 2px;
-}
-
 .app-well-app > .overview-icon,
-.remove-favorite > .overview-icon,
+.show-apps > .overview-icon,
 .search-result-content > .overview-icon {
     border-radius: 4px;
     padding: 3px;
@@ -796,15 +812,44 @@ StScrollBar StButton#vhandle:hover
 }
 
 .app-well-app:hover > .overview-icon,
-.remove-favorite:hover > .overview-icon,
+.show-apps:hover > .overview-icon,
 .search-result-content:hover > .overview-icon {
     background-color: rgba(255,255,255,0.1);
     text-shadow: black 0px 2px 2px;
+    transition-duration: 100;
+    color:white;
+}
+
+.show-apps {
+    padding: 4px 0;
+}
+
+.show-apps-icon {
+    color: #a0a0a0;
+}
+
+.show-apps:hover .show-apps-icon {
+    color: white;
+}
+
+.show-apps:checked > .overview-icon {
+    background-gradient-start: rgba(255, 255, 255, .05);
+    background-gradient-end: rgba(255, 255, 255, .15);
+    background-gradient-direction: vertical;
+    border-radius: 4px;
+    box-shadow: inset 0px 1px 2px 0px rgba(0, 0, 0, 1);
+    transition-duration: 100;
+}
+
+.show-apps:checked .show-apps-icon,
+.show-apps:focus .show-apps-icon {
+    color: white;
     transition-duration: 100;
 }
 
 .app-well-app:focus > .overview-icon,
 .search-result-content:focus > .overview-icon,
+.show-apps:focus > .overview-icon,
 .app-well-app:selected > .overview-icon,
 .search-result-content:selected > .overview-icon {
     background-color: rgba(255,255,255,0.33);
@@ -812,8 +857,7 @@ StScrollBar StButton#vhandle:hover
 
 /* LookingGlass */
 
-#LookingGlassDialog
-{
+#LookingGlassDialog {
     background-color: rgba(0,0,0,0.80);
     spacing: 4px;
     padding: 4px;
@@ -821,8 +865,7 @@ StScrollBar StButton#vhandle:hover
     border-radius: 4px;
 }
 
-#LookingGlassDialog > #Toolbar
-{
+#LookingGlassDialog > #Toolbar {
     border: 1px solid grey;
     border-radius: 4px;
 }
@@ -858,53 +901,44 @@ StScrollBar StButton#vhandle:hover
     padding-bottom: 8px;
 }
 
-.lg-dialog StEntry
-{
+.lg-dialog StEntry {
     selection-background-color: #bbbbbb;
     selected-color: #333333;
 }
 
-.lg-completions-text
-{
+.lg-completions-text {
     font-size: .9em;
     font-style: italic;
 }
 
-.lg-obj-inspector-title
-{
+.lg-obj-inspector-title {
     spacing: 4px;
 }
 
-.lg-obj-inspector-button
-{
+.lg-obj-inspector-button {
     border: 1px solid gray;
     padding: 4px;
     border-radius: 4px;
 }
 
-.lg-obj-inspector-button:hover
-{
+.lg-obj-inspector-button:hover {
     border: 1px solid #ffffff;
 }
 
-.lg-dialog .shell-link
-{
+.lg-dialog .shell-link {
     color: #999999;
 }
 
-.lg-dialog .shell-link:hover
-{
+.lg-dialog .shell-link:hover {
     color: #dddddd;
 }
 
-#LookingGlassDialog StBoxLayout#EvalBox
-{
+#LookingGlassDialog StBoxLayout#EvalBox {
     padding: 4px;
     spacing: 4px;
 }
 
-#LookingGlassDialog StBoxLayout#ResultsArea
-{
+#LookingGlassDialog StBoxLayout#ResultsArea {
     spacing: 4px;
 }
 
@@ -942,7 +976,7 @@ StScrollBar StButton#vhandle:hover
 
 #calendarEventsArea {
     /* this is the width of the second column of the popup */
-    min-width: 400px;
+    min-width: 320px;
 }
 
 .calendar-vertical-separator {
@@ -951,29 +985,22 @@ StScrollBar StButton#vhandle:hover
     width: 0.3em;
 }
 
-#calendarPopup {
-    border-radius: 5px;
-    background: rgba(0,0,0,0.9);
-    border: 1px solid rgba(128,128,128,0.45);
-    color: white;
-}
-
 #calendarPopup .calendar {
     padding: 10px;
 }
 
 .calendar {
-    padding: .4em 1.75em;
+    padding: .4em 1.75em .8em 1.75em;
     spacing-rows: 0px;
     spacing-columns: 0px;
 }
 
 .calendar-month-label {
-    color: #666666;
-    font-size: 7.5pt;
+    color: #888a85;
+    font-size: 9.5pt;
+    font-weight: bold;
     padding-bottom: 8px;
     padding-top: 8px;
-    font-weight: bold;
 }
 
 .calendar-change-month-back {
@@ -1013,14 +1040,14 @@ StScrollBar StButton#vhandle:hover
 }
 
 .datemenu-date-label {
-    padding: .4em 1.75em;
-    color: #cccccc;
+    padding: .4em 1.7em;
     font-weight: bold;
     text-align: center;
+    color: #eeeeec;
 }
 
 .calendar-day-base {
-    font-size: 7.5pt;
+    font-size: 9pt;
     text-align: center;
     width: 2.4em;
     height: 2.4em;
@@ -1028,33 +1055,37 @@ StScrollBar StButton#vhandle:hover
 
 .calendar-day-base:hover {
     background-color: #777777;
-    color: #fff;
 }
 
 .calendar-day-base:active {
+    font-size: 9pt;
     background-color: #555555;
+    color: white;
 }
 
 .calendar-day-heading {
-    color: #666666;
-    padding-top: 1em;
+    color: #888a85;
+    padding-top: .2em;
+    height: 1.7em;
 }
 
 .calendar-week-number {
-    color: #666666;
+    color: #babdb6;
     font-weight: bold;
 }
 
 /* Hack used in lieu of border-collapse - see calendar.js */
 .calendar-day {
-    border: 1px solid #333333;
-    color: #888888;
+    border: 1px solid #505050;
+    color: #babdb6;
     border-top-width: 0;
     border-left-width: 0;
 }
+
 .calendar-day-top {
     border-top-width: 1px;
 }
+
 .calendar-day-left {
     border-left-width: 1px;
 }
@@ -1069,7 +1100,6 @@ StScrollBar StButton#vhandle:hover
 .calendar-today {
     background-image: url("calendar-today.svg");
     text-shadow: black 0px 2px 2px;
-    color: #ffffff;
     font-weight: bold;
 }
 
@@ -1079,38 +1109,33 @@ StScrollBar StButton#vhandle:hover
 
 .calendar-day-with-events {
     font-weight: bold;
-    color: #cccccc;
+    color: white;
 }
 
 .events-header-vbox {
     spacing: 6pt;
-    padding-right: 1.75em;
+    padding-right: .5em;
 }
 
 .events-header-vbox:rtl {
-    padding-right: 0em;
-    padding-left: 1.75em;
+    padding-left: .5em;
 }
 
 .events-header-hbox {
-    padding: 0.3em;
+    padding: 0.3em 1.4em;
 }
 
 .events-day-header {
-    font-size: 9pt;
     font-weight: bold;
-    color: rgba(153, 153, 153, 1.0);
-    padding-left: 1.8em;
-    padding-top: 0.8em;
+    color: #999999;
+    padding: 0.4em 1.4em 0em 1.4em;
 }
 
 .events-day-header:rtl {
-    padding-left: 0em;
-    padding-right: 0.3em;
+    padding: 0em 1.4em 0.4em 1.4em;
 }
 
 .events-day-dayname {
-    font-size: 9pt;
     color: rgba(153, 153, 153, 1.0);
     text-align: left;
 }
@@ -1120,7 +1145,6 @@ StScrollBar StButton#vhandle:hover
 }
 
 .events-day-time {
-    font-size: 9pt;
     color: #fff;
     text-align: right;
 }
@@ -1130,7 +1154,6 @@ StScrollBar StButton#vhandle:hover
 }
 
 .events-day-task {
-    font-size: 9pt;
     color: rgba(153, 153, 153, 1.0);
 }
 
@@ -1139,13 +1162,13 @@ StScrollBar StButton#vhandle:hover
 }
 
 .events-time-box {
-    min-width: 53pt;
-    padding-right: 6pt;
+    min-width: 48pt;
+    padding-right: 12pt;
 }
 
 .events-time-box:rtl {
     padding-right: 0px;
-    padding-left: 6pt;
+    padding-left: 12pt;
 }
 
 .events-event-box {
@@ -1157,19 +1180,27 @@ StScrollBar StButton#vhandle:hover
 
 /* Message Tray */
 #message-tray {
-    background-gradient-direction: vertical;
-    background-gradient-start: rgba(0,0,0,0.01);
-    background-gradient-end: rgba(0,0,0,0.82);
-    height: 36px;
+    background: #2e3436 url(message-tray-background.png);
+    background-repeat: repeat;
+    transition-duration: 250;
+    height: 72px;
+}
+
+#message-tray:overview {
+    background: rgba(0, 0, 0, 0.1);
+    border-top: 1px solid rgba(128, 128, 128, 0.3);
 }
 
 .notification {
-    font-size: 11pt;
     border-radius: 10px 10px 0px 0px;
     background: rgba(0,0,0,0.8);
     padding: 8px 8px 4px 8px;
     spacing-rows: 10px;
     spacing-columns: 10px;
+}
+
+.notification, #notification-container {
+    font-size: 11pt;
     width: 34em;
 }
 
@@ -1187,12 +1218,11 @@ StScrollBar StButton#vhandle:hover
 
 .summary-boxpointer {
     -arrow-border-radius: 8px;
-    -arrow-background-color: rgba(0,0,0,0.9);
-    -arrow-border-width: 2px;
-    -arrow-border-color: #a5a5a5;
-    -arrow-base: 24px;
-    -arrow-rise: 11px;
+    -arrow-background-color: rgba(0,0,0,0.8);
+    -arrow-base: 36px;
+    -arrow-rise: 18px;
     color: white;
+    -boxpointer-gap: 4px;
 }
 
 .summary-boxpointer .notification {
@@ -1206,17 +1236,17 @@ StScrollBar StButton#vhandle:hover
     padding-bottom: 12px;
 }
 
-#summary-notification-stack-scrollview {
+.summary-notification-stack-scrollview {
     max-height: 18em;
     padding-top: 6px;
     padding-bottom: 6px;
 }
 
-#summary-notification-stack-scrollview:ltr {
+.summary-notification-stack-scrollview:ltr {
     padding-right: 8px;
 }
 
-#summary-notification-stack-scrollview:rtl {
+.summary-notification-stack-scrollview:rtl {
     padding-left: 8px;
 }
 
@@ -1369,48 +1399,12 @@ StScrollBar StButton#vhandle:hover
 }
 
 .notification StEntry {
-    padding: 4px;
     border-radius: 4px;
-    color: #a8a8a8;
-    selected-color: black;
-    border: 1px solid rgba(245,245,245,0.2);
-    background-gradient-direction: vertical;
-    background-gradient-start: rgb(200,200,200);
-    background-gradient-end: white;
-    transition-duration: 300;
-    box-shadow: inset 0px 2px 4px rgba(0,0,0,0.6);
-
-    caret-color: #a8a8a8;
-    caret-size: 1px;
 }
 
-.notification StEntry:focus {
-    border: 1px solid #8b8b8b;
-    color: #333333;
-    background-gradient-direction: vertical;
-    background-gradient-start: rgb(200,200,200);
-    background-gradient-end: white;
-
-    caret-color: #545454;
-    selection-background-color: #808080;
-}
-
-/* The spacing and padding on the summary is tricky; we want to keep
- * the icons from touching each other or the edges of the screen, but
- * we also want them to be "Fitts"-y with respect to the edges, so the
- * summary area's bottom and right padding must actually be part of
- * the icons. However, we can't put *all* of the padding into the
- * icons, because then the summary would be 0x0 when there were no
- * icons in it, and so you wouldn't be able to hover over it to
- * activate it.
- *
- * Also, the spacing between a summary-source's icon and title is
- * actually specified as padding-left in source-title, because we
- * want the spacing to collapse along with the title.
- */
 #summary-mode {
     padding: 2px 0px 0px 4px;
-    height: 36px;
+    height: 72px;
 }
 
 #summary-mode:rtl {
@@ -1418,45 +1412,22 @@ StScrollBar StButton#vhandle:hover
 }
 
 .summary-source-button {
-    text-shadow: black 0px 2px 2px;
+    border-radius: 4px;
+    transition-duration: 100;
 }
 
-.summary-source-button:ltr {
-    padding-right: 12px;
+.summary-source-button:hover {
+    background-color: rgba(255,255,255,0.1);
 }
 
-.summary-source-button:selected .summary-source {
-    background-image: url("panel-button-highlight-narrow.svg");
-    background-size: contain;
-    border-image: url("source-button-border.svg") 10 10 0 1;
-}
-
-.summary-source-button:expanded:selected .summary-source {
-    background-image: none;
-    border-image: none;
-}
-
-.summary-source-button:expanded:selected {
-    background-image: url("panel-button-highlight-wide.svg");
-    background-size: contain;
-    border-image: url("source-button-border.svg") 10 10 0 1;
-}
-
-.summary-source-button:rtl {
-    padding-left: 12px;
-}
-
-.summary-source-button:last-child:ltr {
-    padding-right: 12px;
-}
-
-.summary-source-button:last-child:rtl {
-    padding-left: 12px;
+.summary-source-button:focus,
+.summary-source-button:selected {
+    background-color: rgba(255,255,255,0.33);
 }
 
 .summary-source {
-    padding-right: 4px;
-    padding-left: 4px;
+    padding-right: 6px;
+    padding-left: 6px;
 }
 
 .summary-source-counter {
@@ -1467,15 +1438,6 @@ StScrollBar StButton#vhandle:hover
     border-radius: 1em;
     min-height: 1em;
     min-width: 1em;
-}
-
-.source-title {
-    padding-left: 4px;
-}
-
-.source-title:rtl {
-    padding-left: 0px;
-    padding-right: 4px;
 }
 
 /* App Switcher */
@@ -1588,7 +1550,7 @@ StScrollBar StButton#vhandle:hover
     height: 100px;
     border: 0px;
     background: rgba(255,255,255,0.5);
-    background-image: url("ws-switch-arrow-up.svg");
+    background-image: url("ws-switch-arrow-up.png");
     border-radius: 8px;
 }
 
@@ -1596,7 +1558,7 @@ StScrollBar StButton#vhandle:hover
     height: 100px;
     border: 0px;
     background: rgba(255,255,255,0.5);
-    background-image: url("ws-switch-arrow-down.svg");
+    background-image: url("ws-switch-arrow-down.png");
     border-radius: 8px;
 }
 
@@ -1642,7 +1604,7 @@ StScrollBar StButton#vhandle:hover
     padding: 4px 32px 5px;
 }
 
-.modal-dialog-button:disabled {
+.modal-dialog-button:insensitive {
     color: rgb(60, 60, 60);
 }
 
@@ -1674,7 +1636,7 @@ StScrollBar StButton#vhandle:hover
 }
 
 .lightbox {
-    background-color: rgba(0, 0, 0, 0.4);
+    background-color: black;
 }
 
 .flashspot {
@@ -1868,32 +1830,8 @@ StScrollBar StButton#vhandle:hover
     color: #666666;
 }
 
-.prompt-dialog-password-label:ltr {
-    padding-right: 0.5em;
-}
-
-.prompt-dialog-password-label:rtl {
-    padding-left: 0.5em;
-}
-
-.prompt-dialog-password-entry {
-    background-gradient-start: rgb(236,236,236);
-    background-gradient-end: white;
-    background-gradient-direction: vertical;
-    color: black;
-    selected-color: white;
-    border-radius: 5px;
-    border: 2px solid #555753;
-}
-
-.prompt-dialog-password-entry:focus {
-    border: 2px solid #3465a4;
-}
-
-.prompt-dialog-password-entry .capslock-warning {
-    icon-size: 16px;
-    warning-color: #999;
-    padding: 0 4px;
+.prompt-dialog-password-box {
+    spacing: 1em;
 }
 
 .prompt-dialog-error-label {
@@ -1936,10 +1874,12 @@ StScrollBar StButton#vhandle:hover
 
 .network-dialog-secret-table {
     spacing-rows: 15px;
+    spacing-columns: 1em;
 }
 
 .keyring-dialog-control-table {
     spacing-rows: 15px;
+    spacing-columns: 1em;
 }
 
 /* Magnifier */
@@ -2006,3 +1946,296 @@ StScrollBar StButton#vhandle:hover
     -arrow-rise: 10px;
     -boxpointer-gap: 5px;
 }
+
+/* IBus Candidate Popup */
+.candidate-index {
+    padding: 0.5em 0.5em 0.5em 0.5em;
+}
+
+.candidate-label {
+    padding: 0.5em 0.5em 0.5em 0.5em;
+}
+
+.candidate-label:selected {
+    border-radius: 4px;
+    background-color: rgba(255,255,255,0.33);
+}
+
+/* Login Dialog */
+
+.login-dialog-banner {
+    font-size: 10pt;
+    font-weight: bold;
+    text-align: center;
+    color: #666666;
+    padding-bottom: 1em;
+}
+
+.login-dialog-title {
+    font-size: 14pt;
+    font-weight: bold;
+    color: #666666;
+    padding-bottom: 2em;
+}
+
+.login-dialog {
+    /* Reset border and background */
+    border: none;
+    background-color: transparent;
+
+    border-radius: 16px;
+    min-height: 150px;
+    max-height: 700px;
+    min-width: 350px;
+}
+
+.login-dialog-prompt-login-hint-message {
+    font-size: 10.5pt;
+}
+
+.login-dialog-user-list-view {
+    -st-vfade-offset: 1em;
+}
+
+.login-dialog-user-list {
+    spacing: 12px;
+    padding: .2em;
+}
+
+.login-dialog-user-list-item {
+    color: #666666;
+    border-radius: 10px;
+    padding: .2em;
+}
+
+.login-dialog-user-list-item:ltr {
+    padding-right: 1em;
+}
+
+.login-dialog-user-list-item:rtl {
+    padding-left: 1em;
+}
+
+.login-dialog-user-list-item .login-dialog-user-list-item-name {
+    font-size: 20pt;
+    padding-left: 1em;
+}
+
+.login-dialog-user-list-item:hover .login-dialog-user-list-item-name,
+.login-dialog-user-list:expanded .login-dialog-user-list-item:focus .login-dialog-user-list-item-name,
+.login-dialog-user-list:expanded .login-dialog-user-list-item:logged-in {
+    color: white;
+    text-shadow: black 0px 2px 2px;
+}
+
+.login-dialog-user-list-item:hover {
+    background-color: rgba(255,255,255,0.1);
+}
+
+.login-dialog-user-list:expanded .login-dialog-user-list-item:focus {
+    background-color: rgba(255,255,255,0.33);
+}
+
+.login-dialog-user-list:expanded .login-dialog-user-list-item:logged-in {
+    background-image: url("logged-in-indicator.svg");
+    background-size: contain;
+}
+
+.login-dialog-user-list-item-text-box {
+    padding: 0 0.5em;
+}
+
+.login-dialog-user-list-item .login-dialog-timed-login-indicator {
+    background-color: rgba(0,0,0,0.0);
+    height: 2px;
+}
+
+.login-dialog-user-list-item:focus .login-dialog-timed-login-indicator {
+    background-color: #8b8b8b;
+}
+
+.login-dialog-user-list-item-icon {
+    border: 2px solid #8b8b8b;
+    border-radius: 8px;
+    width: 64px;
+    height: 64px;
+}
+
+.login-dialog-not-listed-label {
+    font-size: 10.5pt;
+    font-weight: bold;
+    color: #666666;
+    padding-top: 1em;
+}
+
+.login-dialog-not-listed-button:hover .login-dialog-not-listed-label {
+    color: #E8E8E8;
+}
+
+.login-dialog-username {
+    font-size: 16pt;
+    font-weight: bold;
+    text-align: left;
+    padding-left: 15px;
+    text-shadow: black 4px 4px 3px 0px;
+}
+
+.login-dialog-prompt-layout {
+    padding-top: 24px;
+    padding-bottom: 12px;
+    spacing: 8px;
+}
+
+.login-dialog-prompt-label {
+    color: #eeeeee;
+    font-size: 14px;
+}
+
+.login-dialog-prompt-entry {
+    width: 15em;
+}
+
+.login-dialog-session-list {
+    color: #ffffff;
+    font-size: 10.5pt;
+}
+
+.login-dialog-session-list-button {
+    padding: 4px;
+}
+
+.login-dialog-session-list-button:focus {
+    background-color: #4c4c4c;
+}
+
+.login-dialog-session-list-button:active {
+    background-color: #4c4c4c;
+}
+
+.login-dialog-session-list-button:hover {
+    font-weight: bold;
+}
+
+.login-dialog-session-list-scroll-view {
+    background-gradient-start: rgba(80,80,80,0.3);
+    background-gradient-end: rgba(80,80,80,0.7);
+    background-gradient-direction: vertical;
+    box-shadow: inset 0px 2px 4px rgba(0,0,0,0.9);
+    border-radius: 8px;
+    border: 1px solid rgba(80,80,80,1.0);
+    padding: .5em;
+}
+
+.login-dialog-session-list-item:focus {
+    background-color: #666666;
+}
+
+.login-dialog-session-list-triangle {
+    padding-right: .5em;
+}
+
+.login-dialog-session-list-item-box {
+    spacing: .25em;
+}
+
+.login-dialog-session-list-item-dot {
+    width: .75em;
+    height: .75em;
+}
+
+
+.login-dialog .modal-dialog-button {
+    border: 1px solid #666666;
+    border-radius: 5px;
+    padding: 3px 18px;
+}
+
+.login-dialog .modal-dialog-button:default {
+    background-gradient-start: #6793c4;
+    background-gradient-end: #335d8f;
+    background-gradient-direction: vertical;
+    border: 2px solid #16335d;
+}
+
+.login-dialog .modal-dialog-button:default:hover {
+    background-gradient-start: #74a0d0;
+    background-gradient-end: #436d9f;
+}
+
+.login-dialog .modal-dialog-button:default:active,
+.login-dialog .modal-dialog-button:default:pressed {
+    background-gradient-start: #436d9f;
+    background-gradient-end: #74a0d0;
+}
+
+.unlock-dialog-user-name-container {
+    spacing: .4em;
+}
+
+/* Screen shield */
+
+#lockDialogGroup {
+    background: #2e3436 url(noise-texture.png);
+    background-repeat: repeat;
+}
+
+#lockScreenGroup .arrow {
+    color: #333333;
+    width: 100px;
+    height: 50px;
+}
+
+.screen-shield-clock {
+    color: white;
+    text-shadow: 0px 1px 2px rgba(0,0,0,0.6);
+    font-weight: bold;
+    text-align: center;
+    padding-bottom: 1.5em;
+}
+
+.screen-shield-clock-time {
+    font-size: 86px;
+    text-shadow: 0px 2px 2px rgba(0,0,0,0.4);
+}
+
+.screen-shield-clock-date {
+    font-size: 48px;
+}
+
+#screenShieldNotifications {
+    border-radius: 8px;
+    background-color: rgba(0.0, 0.0, 0.0, 0.9);
+    border: 2px solid #868686;
+    max-height: 500px;
+    padding: 12px 0;
+}
+
+.screen-shield-notifications-box {
+    spacing: 12px;
+}
+
+.screen-shield-notification-source {
+    padding: 0 24px;
+    spacing: 5px;
+}
+
+.screen-shield-notification-label {
+    font-size: 1.2em;
+    font-weight: bold;
+}
+
+/* Remove background from notifications, otherwise
+   opacity is doubled and they look darker
+*/
+.screen-shield-notifications-box .notification {
+    background-color: transparent;
+}
+
+/* Override padding on resident notifications, since
+   the notifications box has its own spacing
+*/
+.screen-shield-notifications-box .summary-notification-stack-scrollview {
+    padding-top: 0px;
+    padding-bottom: 0px;
+}
+

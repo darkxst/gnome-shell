@@ -2,14 +2,10 @@
 
 const Gio = imports.gi.Gio;
 const Lang = imports.lang;
-const Mainloop = imports.mainloop;
-const Shell = imports.gi.Shell;
 const St = imports.gi.St;
 
-const Main = imports.ui.main;
 const PanelMenu = imports.ui.panelMenu;
 const PopupMenu = imports.ui.popupMenu;
-const Util = imports.misc.util;
 
 const BUS_NAME = 'org.gnome.SettingsDaemon';
 const OBJECT_PATH = '/org/gnome/SettingsDaemon/Power';
@@ -78,6 +74,12 @@ const Indicator = new Lang.Class({
         this._proxy.connect('g-properties-changed',
                             Lang.bind(this, this._devicesChanged));
         this._devicesChanged();
+    },
+
+    setLockedState: function(locked) {
+        if (locked)
+            this.menu.close();
+        this.actor.reactive = !locked;
     },
 
     _readPrimaryDevice: function() {
@@ -185,6 +187,8 @@ const DeviceItem = new Lang.Class({
 
         let percentLabel = new St.Label({ text: C_("percent of battery remaining", "%d%%").format(Math.round(percentage)) });
         this.addActor(percentLabel, { align: St.Align.END });
+        //FIXME: ideally we would like to expose this._label and percentLabel
+        this.actor.label_actor = percentLabel;
     },
 
     _deviceTypeToString: function(type) {

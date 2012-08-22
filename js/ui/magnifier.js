@@ -602,7 +602,7 @@ const Magnifier = new Lang.Class({
         // Applies only to the first zoom region.
         if (this._zoomRegions.length) {
             this._zoomRegions[0].setColorSaturation(
-                this._settings.get_boolean(COLOR_SATURATION_KEY)
+                this._settings.get_double(COLOR_SATURATION_KEY)
             );
         }
     },
@@ -1641,13 +1641,14 @@ const MagShaderEffects = new Lang.Class({
     _init: function(uiGroupClone) {
         this._inverse = new Shell.InvertLightnessEffect();
         this._brightnessContrast = new Clutter.BrightnessContrastEffect();
-        this._colorSaturation = new Clutter.DesaturateEffect();
+        this._colorDesaturation = new Clutter.DesaturateEffect();
         this._inverse.set_enabled(false);
         this._brightnessContrast.set_enabled(false);
 
         this._magView = uiGroupClone;
         this._magView.add_effect(this._inverse);
         this._magView.add_effect(this._brightnessContrast);
+        this._magView.add_effect(this._colorDesaturation);
     },
 
     /**
@@ -1658,7 +1659,7 @@ const MagShaderEffects = new Lang.Class({
      */
     destroyEffects: function() {
         this._magView.clear_effects();
-        this._colorSaturation = null;
+        this._colorDesaturation = null;
         this._brightnessContrast = null;
         this._inverse = null;
         this._magView = null;
@@ -1683,11 +1684,11 @@ const MagShaderEffects = new Lang.Class({
     },
 
     setColorSaturation: function(factor) {
-        this._colorSaturation.set_factor(factor);
+        this._colorDesaturation.set_factor(1.0 - factor);
     },
 
     getColorSaturation: function() {
-        return this._colorSaturation.get_factor();
+        return 1.0 - this._colorDesaturation.get_factor();
     },
 
     /**
